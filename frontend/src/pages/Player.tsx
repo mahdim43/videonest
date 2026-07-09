@@ -65,6 +65,7 @@ export default function Player() {
   const ambientInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
   const pinchStartRef = useRef<number | null>(null)
+  const doubleTapRef = useRef(false)
   const volumeSliderRef = useRef<HTMLDivElement>(null)
 
   const { data: video } = useQuery({
@@ -491,6 +492,7 @@ export default function Player() {
       return
     }
 
+    doubleTapRef.current = false
     const touch = e.touches[0]
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
 
@@ -505,6 +507,7 @@ export default function Player() {
     const x = touch.clientX
 
     if (timeSinceLastTap < 300) {
+      doubleTapRef.current = true
       if (x < screenWidth * 0.3) {
         skip(-5)
         setShowGestureHint('-5s')
@@ -578,10 +581,11 @@ export default function Player() {
       const dx = touch.clientX - touchStartRef.current.x
       const dy = touch.clientY - touchStartRef.current.y
       const elapsed = Date.now() - touchStartRef.current.time
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && elapsed < 300) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && elapsed < 300 && !doubleTapRef.current) {
         setShowControls(prev => !prev)
         if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
       }
+      doubleTapRef.current = false
     }
 
     touchStartRef.current = null
