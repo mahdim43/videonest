@@ -27,7 +27,9 @@ export const videosApi = {
     return api.get(`/videos/?${params.toString()}`)
   },
   get: (id: number) => api.get(`/videos/${id}`),
+  getNeighbors: (id: number) => api.get(`/videos/${id}/neighbors`),
   streamUrl: (id: number) => `/api/videos/${id}/stream`,
+  thumbnailUrl: (id: number) => `/api/videos/${id}/thumbnail`,
   getSubtitles: (id: number) => api.get(`/videos/${id}/subtitles`),
   subtitleUrl: (videoId: number, trackIndex: number) => `/api/videos/${videoId}/subtitles/${trackIndex}`,
 }
@@ -62,6 +64,24 @@ export const settingsApi = {
     playback_speed?: number
     autoplay?: boolean
   }) => api.put(`/settings/${profileId}`, data),
+}
+
+export const subtitlePrefsApi = {
+  get: (profileId: number) => api.get(`/subtitle-preferences/${profileId}`),
+  update: (profileId: number, data: {
+    font_size?: number
+    color?: string
+    background_opacity?: number
+    background_color?: string
+    outline?: boolean
+    outline_color?: string
+    outline_width?: number
+    shadow?: boolean
+    shadow_color?: string
+    shadow_offset?: number
+    position?: number
+    delay?: number
+  }) => api.put(`/subtitle-preferences/${profileId}`, data),
 }
 
 export default api

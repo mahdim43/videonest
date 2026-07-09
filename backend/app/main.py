@@ -2,9 +2,10 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.database import init_db
-from app.api import profiles, folders, videos, history, favorites, settings
+from app.api import profiles, folders, videos, history, favorites, settings, subtitle_preferences
 from app.services.watcher import start_watching, stop_watching
 
 
@@ -38,6 +39,12 @@ app.include_router(videos.router)
 app.include_router(history.router)
 app.include_router(favorites.router)
 app.include_router(settings.router)
+app.include_router(subtitle_preferences.router)
+
+try:
+    app.mount("/thumbnails", StaticFiles(directory="thumbnails"), name="thumbnails")
+except Exception:
+    pass
 
 
 @app.get("/")

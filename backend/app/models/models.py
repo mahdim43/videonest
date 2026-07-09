@@ -16,6 +16,7 @@ class Profile(Base):
     playback_history = relationship("PlaybackHistory", back_populates="profile")
     favorites = relationship("Favorite", back_populates="profile")
     settings = relationship("ProfileSettings", back_populates="profile", uselist=False)
+    subtitle_preferences = relationship("SubtitlePreferences", back_populates="profile", uselist=False)
 
 
 class Folder(Base):
@@ -42,6 +43,7 @@ class Video(Base):
     bitrate = Column(Integer, nullable=True)
     frame_rate = Column(Float, nullable=True)
     file_size = Column(Integer, nullable=True)
+    thumbnail_path = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     indexed_at = Column(DateTime, default=datetime.utcnow)
 
@@ -91,3 +93,24 @@ class ProfileSettings(Base):
     autoplay = Column(Boolean, default=True)
 
     profile = relationship("Profile", back_populates="settings")
+
+
+class SubtitlePreferences(Base):
+    __tablename__ = "subtitle_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    profile_id = Column(Integer, ForeignKey("profiles.id"), unique=True)
+    font_size = Column(Integer, default=24)
+    color = Column(String, default="#FFFFFF")
+    background_opacity = Column(Float, default=0.5)
+    background_color = Column(String, default="#000000")
+    outline = Column(Boolean, default=True)
+    outline_color = Column(String, default="#000000")
+    outline_width = Column(Integer, default=2)
+    shadow = Column(Boolean, default=True)
+    shadow_color = Column(String, default="#000000")
+    shadow_offset = Column(Integer, default=2)
+    position = Column(Integer, default=100)
+    delay = Column(Float, default=0.0)
+
+    profile = relationship("Profile", back_populates="subtitle_preferences")

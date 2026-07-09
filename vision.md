@@ -1,287 +1,409 @@
-You are a senior frontend engineer and UX designer.
+Vision
 
-Your task is to build the VideoNest video player.
+VideoNest is not a media server like Jellyfin or Plex.
 
-This player is the most important part of the entire application.
+It is a personal local streaming platform designed for a single user who wants the smoothest possible experience watching videos stored on their PC from any device connected to the same Wi-Fi network.
 
-Do NOT use the default browser controls.
+The philosophy is:
 
-Build a completely custom video player using React + TypeScript + Vidstack.
+Pick your folders once. Forget about file management forever.
 
-The player should feel like a premium streaming platform rather than a web video player.
+The application should feel closer to a premium streaming service than a traditional file browser while remaining lightweight, responsive, and easy to deploy.
 
-=====================================================
-DESIGN
-=====================================================
+Target Users
+One primary user.
+Optional multiple local profiles.
+No passwords.
+No cloud.
+No internet required.
+No account creation.
 
-Theme:
+Everything stays on the user's computer.
 
-- Background: #080808
-- Surface: #111111
-- Cards: #181818
-- Accent: #D90429
-- Hover Accent: #EF233C
-- Text: White
-- Secondary Text: #AAAAAA
+Core Workflow
+User opens VideoNest.
+Creates one or more local profiles.
+Chooses one or more folders.
+VideoNest indexes the folders.
+Library appears instantly.
+User opens the website from a phone.
+Presses Play.
+That's it.
 
-Use smooth animations.
+No additional setup.
 
-Rounded corners.
+Architecture
+                Browser (Phone)
 
-Soft shadows.
+                     │
 
-No visible borders.
+          React + TypeScript + PWA
 
-The controls should fade in/out.
+                     │
 
-No YouTube clone.
+──────────── Local Network ────────────
 
-No Netflix clone.
+                     │
 
-Create a unique premium UI.
+         FastAPI Backend (Python)
 
-=====================================================
-PLAYER LAYOUT
-=====================================================
+                     │
 
-The video occupies as much space as possible while preserving aspect ratio.
+     SQLite + FFmpeg + FFprobe
 
-Overlay controls float above the video.
+                     │
 
-The overlay fades in when:
+        User Selected Video Folders
 
-- mouse moves
-- user taps
-- user pauses
+Everything communicates over REST + WebSocket.
 
-The overlay fades out after 2 seconds of inactivity.
+Technology Stack
+Backend
+FastAPI
+SQLAlchemy
+SQLite
+FFmpeg
+FFprobe
+Watchdog (folder monitoring)
+Uvicorn
+Frontend
+React
+TypeScript
+Vite
+TailwindCSS
+Framer Motion
+Vidstack Player
+TanStack Query
+Zustand
+React Router
+Deployment
 
-Use smooth opacity transitions.
+Docker support
 
-=====================================================
-CENTER CONTROLS
-=====================================================
+Standalone installer later
 
-Center controls contain
+Design Language
 
-Previous Episode
+Don't copy Netflix.
 
-Play / Pause
+Don't copy YouTube.
 
-Next Episode
+Instead create a unique identity.
 
-Large circular buttons.
+Style inspiration:
 
-Play button is larger than the others.
+Modern Windows 11
+Cyberpunk UI
+Pixel accents
+Minimalism
+Black and Red
 
-When hovering:
+The UI should feel premium.
 
-- scale 1.08
-- smooth animation
+Colors
 
-=====================================================
-BOTTOM CONTROLS
-=====================================================
+Background
 
-Bottom Left
+#080808
 
-Play
+Panels
 
-Current Time
+#111111
+
+Cards
+
+#181818
+
+Primary Accent
+
+#D90429
+
+Hover
+
+#EF233C
+
+Success
+
+#3CB371
+
+Text
+
+#FFFFFF
+
+Secondary Text
+
+#AAAAAA
+Typography
+
+Body
+
+Inter
+
+Headings
+
+Space Grotesk
+
+Pixel Font
+
+Only for
+
+Logo
+Loading
+Small decorations
+
+Never for body text.
+
+UI Style
+
+Rounded corners
+
+16px
+
+Soft shadows
+
+Glass blur
+
+Large spacing
+
+Very smooth animations
+
+Absolutely no clutter.
+
+Landing Screen
+────────────────────────
+
+VideoNest
+
+Choose Profile
+
+○ Amir
+
++ New Profile
+
+────────────────────────
+Home Screen
+
+Sections
+
+Continue Watching
+
+Recently Added
+
+Favorites
+
+Folders
+
+Settings
+
+Continue Watching Card
+
+Breaking Bad
+
+Episode 5
+
+━━━━━━━━━━━━━━
+
+23:18 / 49:30
+
+Resume
+Folder View
+Anime
+
+    One Piece
+
+    Naruto
+
+Movies
+
+    Interstellar
+
+TV Shows
+
+    Breaking Bad
+
+Folders preserve the real disk structure.
+
+Automatic Folder Monitoring
+
+When the user copies a video into
+
+Anime/
+
+the UI updates automatically.
+
+No refresh button.
+
+Supported Formats
+
+MP4
+
+MKV
+
+AVI
+
+MOV
+
+FLV
+
+WEBM
+
+M4V
+
+TS
+
+HEVC
+
+AV1
+
+H264
+
+HDR if browser supports it.
+
+Video Metadata
+
+Read using FFprobe.
+
+Store
+
+Resolution
+
+Codec
 
 Duration
 
-Bottom Center
+Bitrate
 
-Timeline
+Frame Rate
 
-Bottom Right
+Embedded subtitles
+
+Embedded chapters
+
+File size
+
+Creation date
+
+Streaming
+
+HTTP Range Requests.
+
+Always stream the original file.
+
+Transcode only when absolutely necessary.
+
+Video Player
+
+The player is the most important component.
+
+It should feel better than VLC.
+
+Controls
+
+Play
+
+Pause
+
+Seek
+
+Volume
+
+Fullscreen
 
 Subtitle
 
 Playback Speed
 
-AutoPlay toggle
+AutoPlay
+
+Previous Episode
+
+Next Episode
 
 Picture in Picture
 
-Fullscreen
+Screenshot
 
-Settings
+Gestures
 
-=====================================================
-TIMELINE
-=====================================================
-
-The timeline should feel extremely polished.
-
-Requirements
-
-Hovering over timeline:
-
-Show preview thumbnail.
-
-Show timestamp.
-
-The preview follows cursor.
-
-Current progress
-
-Buffered progress
-
-Remaining progress
-
-must all have different colors.
-
-Dragging
-
-Do NOT jump.
-
-Preview continuously.
-
-When released
-
-Seek.
-
-Support keyboard seeking.
-
-=====================================================
-TIMELINE PREVIEW
-=====================================================
-
-Display
-
-+----------------------+
-|                      |
-|     thumbnail        |
-|                      |
-+----------------------+
-
-01:23:18
-
-The preview should animate.
-
-=====================================================
-GESTURES (DESKTOP)
-=====================================================
-
-Space
-
-Play Pause
-
-Left Arrow
-
-Back 5 seconds
-
-Right Arrow
-
-Forward 5 seconds
-
-Up
-
-Volume +
-
-Down
-
-Volume -
+Desktop
 
 Double Click
 
 Fullscreen
 
+Arrow Keys
+
+Seek
+
+Space
+
+Pause
+
 Mouse Wheel
 
-Adjust volume
+Volume
 
-F
+Mobile
 
-Fullscreen
+Double Tap Left
 
-M
+-5 sec
 
-Mute
+Double Tap Right
 
-C
++5 sec
 
-Toggle subtitles
+Long Press
 
-=====================================================
-GESTURES (MOBILE)
-=====================================================
+2× Speed
 
-Double tap left
+Horizontal Drag
 
-Seek backward 5 seconds
+Seek
 
-Double tap right
+Vertical Left
 
-Seek forward 5 seconds
+Brightness
 
-Long press anywhere
+Vertical Right
 
-Playback becomes 2x
-
-Release
-
-Return to previous speed
-
-Horizontal swipe
-
-Scrub timeline
-
-Vertical swipe left
-
-Brightness overlay
-
-Vertical swipe right
-
-Volume overlay
+Volume
 
 Pinch
 
-Zoom video
+Zoom
 
-=====================================================
-SUBTITLES
-=====================================================
+Timeline
 
-Support
+Generate preview thumbnails.
 
-Embedded subtitles
+While dragging
 
-SRT
+────────●────────
 
-ASS
+      ▲
 
-SSA
+┌──────────┐
 
-VTT
+ thumbnail
 
-Allow user to
+└──────────┘
 
-Enable
+01:24:18
 
-Disable
+Exactly like YouTube.
 
-Change size
+Player Overlay
 
-Change color
+Controls disappear after
 
-Outline
+2 seconds.
 
-Background
+Fade animation.
 
-Subtitle delay
+AutoPlay
 
-Remember preferences.
-
-=====================================================
-AUTO PLAY
-=====================================================
-
-When video finishes
-
-Display
+When a video ends
 
 Next Episode
 
@@ -293,175 +415,296 @@ Playing in
 
 1
 
-Buttons
-
-Play Now
-
-Cancel
-
-AutoPlay can be disabled.
-
-=====================================================
-EPISODES
-=====================================================
-
-Buttons
+Cancel button.
 
 Previous Episode
 
+One tap.
+
 Next Episode
 
-Disable buttons when unavailable.
+One tap.
 
-=====================================================
-PLAYBACK MEMORY
-=====================================================
+Subtitle Support
 
-Save playback position every 5 seconds.
+Embedded subtitles
 
-When reopening
+MKV
 
-Offer
+MP4
+
+External
+
+SRT
+
+ASS
+
+SSA
+
+VTT
+
+SUP
+
+Features
+
+On
+
+Off
+
+Language selection
+
+Size
+
+Color
+
+Outline
+
+Shadow
+
+Background
+
+Delay
+
+Position
+
+Playback Memory
+
+Every profile stores
+
+Current position
+
+Watch percentage
+
+Last watched date
+
+Subtitle preference
+
+Playback speed
+
+If watched
+
+95%
+
+mark as completed.
+
+Continue Watching
+
+Breaking Bad
+
+Episode 6
+
+██████████░░░░
 
 Resume
 
-or
+Search
 
-Start Over
+Instant
 
-If playback >95%
+Search by
 
-Start from beginning next time.
+Filename
 
-=====================================================
-PLAYER STATES
-=====================================================
+Folder
 
-Loading
+Episode
 
-Show animated spinner.
+Series
 
-Buffering
+Favorites
 
-Show buffering animation.
+Heart button.
 
-Paused
+Recently Added
 
-Overlay visible.
+Automatically sorted.
 
-Playing
+Settings
 
-Overlay hidden.
+Folders
 
-Error
+Profiles
 
-Show friendly error page.
+Theme
 
-=====================================================
-ANIMATIONS
-=====================================================
+Subtitle Defaults
 
-All animations should use Framer Motion.
+Playback Defaults
 
-No abrupt changes.
+Database
 
-Use easing.
+Rescan
 
-Buttons
+About
 
-Scale on hover.
+Profiles
 
-Timeline
+No passwords.
 
-Smooth interpolation.
+Just
 
-Overlay
+Choose Profile
 
-Fade.
+Amir
 
-Menus
+Guest
 
-Slide + Fade.
+Anime
 
-=====================================================
-RESPONSIVENESS
-=====================================================
+Database
 
-Desktop
+Tables
 
-Tablet
+Profiles
 
-Phone
+Folders
 
-Landscape phone
+Videos
 
-Portrait phone
+PlaybackHistory
 
-All layouts must work perfectly.
+Favorites
 
-=====================================================
-ACCESSIBILITY
-=====================================================
+Settings
 
-Keyboard accessible.
+SubtitlePreferences
 
-Visible focus.
+API
 
-ARIA labels.
+REST
 
-Large touch targets.
+GET /videos
 
-=====================================================
-QUALITY
-=====================================================
+GET /folders
 
-Avoid unnecessary re-renders.
+GET /profiles
 
-Separate components.
+POST /history
 
-Create reusable hooks.
+POST /favorites
 
-Use TypeScript strictly.
+POST /settings
 
-Code should be production ready.
+GET /stream/{id}
 
-No placeholder code.
+GET /subtitles/{id}
 
-No TODOs.
+WebSocket
 
-No fake implementations.
+Library Updates
 
-Implement everything completely.
+Folder Changes
 
-Think like a senior engineer shipping a polished commercial streaming application.
+Playback Events
 
-Even Better: Break it into separate tasks
+Performance Goals
 
-One mistake people make is asking the AI to build the entire player in one go. I would split it into milestones:
+1000+ videos
 
-Core Player
-Video playback
-Overlay
-Play/Pause
-Timeline
-Fullscreen
-Mobile Gestures
-Double-tap seek
-Hold for 2×
-Swipe seeking
-Brightness/volume gestures
-Subtitle System
-Embedded subtitle extraction
-External subtitle loading
-Subtitle settings UI
-Timeline Preview
-Thumbnail sprite generation
-Hover previews
-Timestamp preview
-Player Polish
-Framer Motion animations
-Loading/buffering states
-Keyboard shortcuts
-Auto-hide controls
+Instant search
+
+Home page
+
+<300ms
+
+Player startup
+
+<1 second
+
+Seek latency
+
+<150ms
+
+60 FPS animations
+
 Accessibility
+
+Keyboard shortcuts
+
+Screen reader labels
+
+Responsive UI
+
+Large touch targets
+
+Future Features
+
+Chromecast
+
+DLNA
+
+Poster downloads
+
+Skip intro
+
+AI chapter detection
+
+Collections
+
+Video tags
+
+Notes
+
+Statistics
+
+Multi-language
+
+Remote access
+
+Development Roadmap
+Phase 1 (MVP)
+Folder selection
+Library indexing
+Streaming
+Profiles
+Playback history
+Continue Watching
+Search
+Favorites
+Embedded and external subtitles
+Mobile-friendly player
+Autoplay
+Next/Previous episode
+Timeline preview
+Beautiful dark theme
+Phase 2
+Metadata enrichment
+Poster downloads
+Keyboard shortcut customization
+Better episode grouping
 Performance optimization
+Phase 3
+Chromecast
+DLNA
+AI-powered organization
+Collections
+Plugin system
+One last feature I would add
+
+This is the feature I'd be most excited about because it reinforces the "personal streaming platform" identity.
+
+Cinema Mode
+
+When you press Play, the app doesn't just open a video—it transitions into a distraction-free viewing experience.
+
+The entire UI fades to black.
+The player expands with a smooth animation.
+The current video's dominant colors subtly tint the background using a blurred ambient glow (similar to Ambilight, but software-generated).
+Controls remain minimal and auto-hide.
+Exiting playback smoothly restores the library.
+
+It makes watching your own videos feel intentional and immersive instead of like opening a file in a generic media player.
+
+One architectural change I strongly recommend
+
+Instead of asking an AI to generate the whole application in one shot, treat this as a professional software project.
+
+Have the AI first generate:
+
+The complete project structure.
+The database schema.
+The REST and WebSocket API contracts.
+The backend implementation.
+The frontend component library and design system.
+The player.
+The remaining pages and features.

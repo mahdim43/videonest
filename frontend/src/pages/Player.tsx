@@ -1,12 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { videosApi, historyApi, favoritesApi } from '../api/client'
+import { videosApi, historyApi, favoritesApi, subtitlePrefsApi } from '../api/client'
 import { useProfileStore } from '../stores/profileStore'
-import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Heart, Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, Settings, PictureInPicture, Camera,
-  Subtitles, ChevronLeft, ChevronRight, Loader2, AlertCircle
+  SkipBack, SkipForward, PictureInPicture,
+  Subtitles, ChevronRight, AlertCircle,
+  Camera, ChevronLeft, Sun, Moon
 } from 'lucide-react'
 import { useState, useRef, useEffect, useCallback } from 'react'
 
@@ -20,6 +21,8 @@ export default function Player() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const ambientCanvasRef = useRef<HTMLCanvasElement>(null)
 
   const [playerState, setPlayerState] = useState<PlayerState>('loading')
   const [isMuted, setIsMuted] = useState(false)
@@ -31,9 +34,11 @@ export default function Player() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [showSettings, setShowSettings] = useState(false)
   const [showVolumeSlider, setShowVolumeSlider] = useState(false)
-  const [showSubtitles, setShowSubtitles] = useState(false)
+  const [showSubtitles, setShowSubtitles] = useState(true)
   const [activeSubtitle, setActiveSubtitle] = useState<number | null>(null)
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false)
+  const [showSubtitleSettings, setShowSubtitleSettings] = useState(false)
+  const [subtitleNotification, setSubtitleNotification] = useState('')
   const [buffered, setBuffered] = useState(0)
   const [showGestureHint, setShowGestureHint] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -41,19 +46,37 @@ export default function Player() {
   const [hoverTime, setHoverTime] = useState(0)
   const [showHoverTime, setShowHoverTime] = useState(false)
   const [autoplay, setAutoplay] = useState(true)
-  const [showAutoplayOverlay, setShowAutoplayOverlay] = useState(false)
-  const [autoplayCountdown, setAutoplayCountdown] = useState(3)
+  const [showAutoplayCountdown, setShowAutoplayCountdown] = useState(false)
+  const [autoplayCountdown, setAutoplayCountdown] = useState(5)
+  const [cinemaMode, setCinemaMode] = useState(false)
+  const [ambientColor, setAmbientColor] = useState('rgba(0,0,0,0.8)')
+  const [brightness, setBrightness] = useState(1)
+  const [showBrightness, setShowBrightness] = useState(false)
+  const [swipeSeekIndicator, setSwipeSeekIndicator] = useState<{ direction: string; amount: number } | null>(null)
 
   const controlsTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastTapTime = useRef(0)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const subtitleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const notificationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const autoplayTimer = useRef<ReturnType<typeof setInterval> | null>(null)
-  const progressX = useMotionValue(0)
+  const ambientInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const pinchStartRef = useRef<number | null>(null)
 
   const { data: video } = useQuery({
     queryKey: ['video', videoId],
     queryFn: async () => {
       const res = await videosApi.get(parseInt(videoId!))
+      return res.data
+    },
+    enabled: !!videoId,
+  })
+
+  const { data: neighbors } = useQuery({
+    queryKey: ['neighbors', videoId],
+    queryFn: async () => {
+      const res = await videosApi.getNeighbors(parseInt(videoId!))
       return res.data
     },
     enabled: !!videoId,
@@ -88,6 +111,24 @@ export default function Player() {
     enabled: !!videoId && !!currentProfile,
   })
 
+  const { data: subtitlePrefs } = useQuery({
+    queryKey: ['subtitlePrefs', currentProfile?.id],
+    queryFn: async () => {
+      if (!currentProfile) return null
+      const res = await subtitlePrefsApi.get(currentProfile.id)
+      return res.data
+    },
+    enabled: !!currentProfile,
+  })
+
+  const updateSubtitlePrefsMutation = useMutation({
+    mutationFn: (data: any) => {
+      if (!currentProfile) throw new Error('No profile')
+      return subtitlePrefsApi.update(currentProfile.id, data)
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['subtitlePrefs'] }),
+  })
+
   const updateHistoryMutation = useMutation({
     mutationFn: (data: { position: number; duration: number }) => {
       if (!currentProfile) throw new Error('No profile')
@@ -111,6 +152,29 @@ export default function Player() {
       queryClient.invalidateQueries({ queryKey: ['favorites'] })
     },
   })
+
+  const showNotification = useCallback((text: string) => {
+    setSubtitleNotification(text)
+    if (notificationTimeout.current) clearTimeout(notificationTimeout.current)
+    notificationTimeout.current = setTimeout(() => setSubtitleNotification(''), 2000)
+  }, [])
+
+  const applySubtitleTrack = useCallback((trackIndex: number | null) => {
+    const video = videoRef.current
+    if (!video) return
+    const tracks = video.textTracks
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].mode = 'hidden'
+    }
+    if (trackIndex !== null) {
+      for (let i = 0; i < tracks.length; i++) {
+        if (i === 0 || tracks[i].language === `track${trackIndex}`) {
+          tracks[i].mode = 'showing'
+          break
+        }
+      }
+    }
+  }, [])
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current
@@ -173,6 +237,50 @@ export default function Player() {
     } catch (err) {
       console.error('PiP failed:', err)
     }
+  }, [])
+
+  const takeScreenshot = useCallback(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0)
+    canvas.toBlob((blob) => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `screenshot_${Math.floor(currentTime)}.png`
+      a.click()
+      URL.revokeObjectURL(url)
+      showNotification('Screenshot saved')
+    }, 'image/png')
+  }, [currentTime, showNotification])
+
+  const updateAmbientColor = useCallback(() => {
+    const video = videoRef.current
+    const canvas = ambientCanvasRef.current
+    if (!video || !canvas || video.readyState < 2) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    canvas.width = 64
+    canvas.height = 36
+    ctx.drawImage(video, 0, 0, 64, 36)
+    const data = ctx.getImageData(0, 0, 64, 36).data
+    let r = 0, g = 0, b = 0, count = 0
+    for (let i = 0; i < data.length; i += 16) {
+      r += data[i]
+      g += data[i + 1]
+      b += data[i + 2]
+      count++
+    }
+    r = Math.floor(r / count * 0.3)
+    g = Math.floor(g / count * 0.3)
+    b = Math.floor(b / count * 0.3)
+    setAmbientColor(`rgba(${r},${g},${b},0.6)`)
   }, [])
 
   const handleTimeUpdate = useCallback(() => {
@@ -285,20 +393,42 @@ export default function Player() {
         break
       case 'c':
         e.preventDefault()
-        setShowSubtitles(s => !s)
+        if (subtitleTracks.length > 0) {
+          if (activeSubtitle !== null) {
+            setActiveSubtitle(null)
+            setShowSubtitles(false)
+            showNotification('Subtitles Off')
+          } else {
+            const firstTrack = subtitleTracks[0]
+            setActiveSubtitle(firstTrack.index)
+            setShowSubtitles(true)
+            showNotification(`Subtitles: ${firstTrack.title || firstTrack.language || 'Track ' + firstTrack.index}`)
+          }
+        }
+        break
+      case 's':
+        e.preventDefault()
+        takeScreenshot()
+        break
+      case 'Escape':
+        if (showSubtitleSettings) {
+          setShowSubtitleSettings(false)
+          e.stopPropagation()
+        }
         break
     }
-  }, [togglePlay, skip, toggleFullscreen, toggleMute, togglePiP])
+  }, [togglePlay, skip, toggleFullscreen, toggleMute, togglePiP, subtitleTracks, activeSubtitle, showNotification, takeScreenshot, showSubtitleSettings])
 
   const handleVolumeChange = useCallback((e: React.MouseEvent) => {
     const slider = e.currentTarget
     const rect = slider.getBoundingClientRect()
-    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const pos = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+    const volumeFromBottom = 1 - pos
     if (videoRef.current) {
-      videoRef.current.volume = pos
+      videoRef.current.volume = volumeFromBottom
       videoRef.current.muted = false
     }
-    setVolume(pos)
+    setVolume(volumeFromBottom)
     setIsMuted(false)
   }, [])
 
@@ -311,6 +441,110 @@ export default function Player() {
       return newV
     })
   }, [])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      pinchStartRef.current = Math.sqrt(dx * dx + dy * dy)
+      return
+    }
+
+    const touch = e.touches[0]
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
+
+    longPressTimer.current = setTimeout(() => {
+      if (videoRef.current) videoRef.current.playbackRate = 2
+      setShowGestureHint('2x Speed')
+    }, 500)
+
+    const now = Date.now()
+    const timeSinceLastTap = now - lastTapTime.current
+    const screenWidth = window.innerWidth
+    const x = touch.clientX
+
+    if (timeSinceLastTap < 300) {
+      if (x < screenWidth * 0.3) {
+        skip(-5)
+        setShowGestureHint('-5s')
+      } else if (x > screenWidth * 0.7) {
+        skip(5)
+        setShowGestureHint('+5s')
+      }
+      setTimeout(() => setShowGestureHint(''), 600)
+    }
+
+    lastTapTime.current = now
+  }, [skip])
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartRef.current !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const scale = dist / pinchStartRef.current
+      if (videoRef.current) {
+        const newScale = Math.max(1, Math.min(3, scale))
+        videoRef.current.style.transform = `scale(${newScale})`
+        videoRef.current.style.transformOrigin = 'center center'
+      }
+      return
+    }
+
+    if (!touchStartRef.current) return
+    const touch = e.touches[0]
+    const dx = touch.clientX - touchStartRef.current.x
+    const dy = touch.clientY - touchStartRef.current.y
+    const screenWidth = window.innerWidth
+    const startX = touchStartRef.current.x
+
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
+      const seekAmount = (dx / screenWidth) * duration * 0.5
+      const direction = dx > 0 ? '+' : '-'
+      setSwipeSeekIndicator({ direction, amount: Math.abs(Math.round(seekAmount)) })
+    }
+
+    if (startX < screenWidth * 0.3 && Math.abs(dy) > 30 && Math.abs(dy) > Math.abs(dx)) {
+      const delta = -dy / (screenHeight())
+      const newBrightness = Math.max(0.1, Math.min(1, brightness + delta * 0.5))
+      setBrightness(newBrightness)
+      setShowBrightness(true)
+    }
+
+    if (startX > screenWidth * 0.7 && Math.abs(dy) > 30 && Math.abs(dy) > Math.abs(dx)) {
+      const delta = -dy / (screenHeight())
+      const newVolume = Math.max(0, Math.min(1, volume + delta * 0.5))
+      if (videoRef.current) videoRef.current.volume = newVolume
+      setVolume(newVolume)
+    }
+  }, [duration, brightness, volume])
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current)
+    if (videoRef.current?.playbackRate === 2) {
+      videoRef.current.playbackRate = playbackSpeed
+      setShowGestureHint('')
+    }
+
+    if (swipeSeekIndicator) {
+      const amount = swipeSeekIndicator.direction === '+' ? swipeSeekIndicator.amount : -swipeSeekIndicator.amount
+      seek(currentTime + amount)
+      setSwipeSeekIndicator(null)
+    }
+
+    if (touchStartRef.current && e.changedTouches.length === 1) {
+      const touch = e.changedTouches[0]
+      const dx = touch.clientX - touchStartRef.current.x
+      const elapsed = Date.now() - touchStartRef.current.time
+      if (Math.abs(dx) < 10 && elapsed < 200) {
+        // tap — already handled by double-tap logic
+      }
+    }
+
+    touchStartRef.current = null
+    pinchStartRef.current = null
+    setShowBrightness(false)
+  }, [playbackSpeed, swipeSeekIndicator, currentTime, seek])
 
   useEffect(() => {
     const video = videoRef.current
@@ -337,9 +571,109 @@ export default function Player() {
     return () => {
       if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
       if (longPressTimer.current) clearTimeout(longPressTimer.current)
+      if (subtitleTimeout.current) clearTimeout(subtitleTimeout.current)
+      if (notificationTimeout.current) clearTimeout(notificationTimeout.current)
       if (autoplayTimer.current) clearInterval(autoplayTimer.current)
+      if (ambientInterval.current) clearInterval(ambientInterval.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (subtitleTracks.length > 0 && activeSubtitle === null && showSubtitles) {
+      const firstTrack = subtitleTracks[0]
+      setActiveSubtitle(firstTrack.index)
+      showNotification(`Subtitles: ${firstTrack.title || firstTrack.language || 'Track ' + firstTrack.index}`)
+    }
+  }, [subtitleTracks, activeSubtitle, showSubtitles, showNotification])
+
+  useEffect(() => {
+    if (subtitleNotification) {
+      if (subtitleTimeout.current) clearTimeout(subtitleTimeout.current)
+      subtitleTimeout.current = setTimeout(() => setSubtitleNotification(''), 2000)
+    }
+  }, [subtitleNotification])
+
+  useEffect(() => {
+    applySubtitleTrack(showSubtitles ? activeSubtitle : null)
+  }, [showSubtitles, activeSubtitle, applySubtitleTrack])
+
+  useEffect(() => {
+    if (cinemaMode) {
+      ambientInterval.current = setInterval(updateAmbientColor, 2000)
+    } else {
+      if (ambientInterval.current) clearInterval(ambientInterval.current)
+    }
+    return () => {
+      if (ambientInterval.current) clearInterval(ambientInterval.current)
+    }
+  }, [cinemaMode, updateAmbientColor])
+
+  useEffect(() => {
+    if (showAutoplayCountdown && autoplay) {
+      setAutoplayCountdown(5)
+      autoplayTimer.current = setInterval(() => {
+        setAutoplayCountdown(prev => {
+          if (prev <= 1) {
+            if (autoplayTimer.current) clearInterval(autoplayTimer.current)
+            setShowAutoplayCountdown(false)
+            if (neighbors?.next) {
+              navigate(`/watch/${neighbors.next.id}`)
+            }
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    }
+    return () => {
+      if (autoplayTimer.current) clearInterval(autoplayTimer.current)
+    }
+  }, [showAutoplayCountdown, autoplay, neighbors, navigate])
+
+  useEffect(() => {
+    const handleVideoEnd = () => {
+      if (autoplay && neighbors?.next) {
+        setShowAutoplayCountdown(true)
+      }
+    }
+    const video = videoRef.current
+    if (video) {
+      video.addEventListener('ended', handleVideoEnd)
+      return () => video.removeEventListener('ended', handleVideoEnd)
+    }
+  }, [autoplay, neighbors])
+
+  useEffect(() => {
+    if (subtitlePrefs) {
+      applySubtitleStyles(subtitlePrefs)
+    }
+  }, [subtitlePrefs])
+
+  const applySubtitleStyles = (prefs: any) => {
+    const style = document.createElement('style')
+    style.id = 'vn-subtitle-style'
+    const existing = document.getElementById('vn-subtitle-style')
+    if (existing) existing.remove()
+
+    let css = `video::cue {`
+    css += `font-size: ${prefs.font_size}px;`
+    css += `color: ${prefs.color};`
+    css += `background: ${prefs.background_color};`
+    css += `background-opacity: ${prefs.background_opacity};`
+    if (prefs.outline) {
+      css += `-webkit-text-stroke: ${prefs.outline_width}px ${prefs.outline_color};`
+    }
+    if (prefs.shadow) {
+      css += `text-shadow: ${prefs.shadow_offset}px ${prefs.shadow_offset}px ${prefs.shadow_color};`
+    }
+    css += `bottom: ${prefs.position}px;`
+    css += `}`
+
+    style.textContent = css
+    document.head.appendChild(style)
+  }
+
+  const screenHeight = () => window.innerHeight
 
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600)
@@ -348,41 +682,6 @@ export default function Player() {
     if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const touch = e.touches[0]
-    const screenWidth = window.innerWidth
-    const x = touch.clientX
-
-    longPressTimer.current = setTimeout(() => {
-      if (videoRef.current) videoRef.current.playbackRate = 2
-      setShowGestureHint('2x Speed')
-    }, 500)
-
-    const now = Date.now()
-    const timeSinceLastTap = now - lastTapTime.current
-
-    if (timeSinceLastTap < 300) {
-      if (x < screenWidth * 0.3) {
-        skip(-5)
-        setShowGestureHint('-5s')
-      } else if (x > screenWidth * 0.7) {
-        skip(5)
-        setShowGestureHint('+5s')
-      }
-      setTimeout(() => setShowGestureHint(''), 600)
-    }
-
-    lastTapTime.current = now
-  }, [skip])
-
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current)
-    if (videoRef.current?.playbackRate === 2) {
-      videoRef.current.playbackRate = playbackSpeed
-      setShowGestureHint('')
-    }
-  }, [playbackSpeed])
 
   if (!video) {
     return (
@@ -402,7 +701,7 @@ export default function Player() {
   return (
     <div
       ref={containerRef}
-      className="min-h-screen bg-black relative select-none overflow-hidden cursor-none"
+      className={`min-h-screen bg-black relative select-none overflow-hidden ${cinemaMode ? 'cursor-default' : 'cursor-none'}`}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
         if (playerState === 'playing') setShowControls(false)
@@ -413,39 +712,59 @@ export default function Player() {
         }
       }}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onWheel={handleWheel}
       style={{ cursor: showControls ? 'default' : 'none' }}
     >
-      <video
-        ref={videoRef}
-        src={videosApi.streamUrl(video.id)}
-        className="w-full h-screen object-contain"
-        onTimeUpdate={handleTimeUpdate}
-        onProgress={handleProgress}
-        onLoadedMetadata={(e) => {
-          setDuration(e.currentTarget.duration)
-          setPlayerState('paused')
-        }}
-        onWaiting={() => setPlayerState('buffering')}
-        onPlaying={() => setPlayerState('playing')}
-        onPlay={() => setPlayerState('playing')}
-        onPause={() => setPlayerState('paused')}
-        onError={() => setPlayerState('error')}
-        onClick={togglePlay}
-        playsInline
-      >
-        {activeSubtitle !== null && (
-          <track
-            kind="subtitles"
-            src={videosApi.subtitleUrl(video.id, activeSubtitle)}
-            srcLang="en"
-            default
-          />
-        )}
-      </video>
+      <canvas ref={canvasRef} className="hidden" />
+      <canvas ref={ambientCanvasRef} className="hidden" width={64} height={36} />
 
-      {/* Buffering State */}
+      {cinemaMode && (
+        <div
+          className="absolute inset-0 -m-20 transition-colors duration-2000"
+          style={{
+            background: `radial-gradient(ellipse at center, ${ambientColor} 0%, rgba(0,0,0,0.95) 70%)`,
+            filter: 'blur(80px)',
+            zIndex: 0,
+          }}
+        />
+      )}
+
+      <div
+        className="relative z-10"
+        style={{ filter: `brightness(${brightness})` }}
+      >
+        <video
+          ref={videoRef}
+          src={videosApi.streamUrl(video.id)}
+          className="w-full h-screen object-contain"
+          onTimeUpdate={handleTimeUpdate}
+          onProgress={handleProgress}
+          onLoadedMetadata={(e) => {
+            setDuration(e.currentTarget.duration)
+            setPlayerState('paused')
+          }}
+          onWaiting={() => setPlayerState('buffering')}
+          onPlaying={() => setPlayerState('playing')}
+          onPlay={() => setPlayerState('playing')}
+          onPause={() => setPlayerState('paused')}
+          onError={() => setPlayerState('error')}
+          onClick={togglePlay}
+          playsInline
+        >
+          {subtitleTracks.map((track: any) => (
+            <track
+              key={`${video.id}-${track.index}`}
+              kind="subtitles"
+              src={videosApi.subtitleUrl(video.id, track.index)}
+              srcLang={`track${track.index}`}
+              label={track.title || track.language || `Track ${track.index}`}
+            />
+          ))}
+        </video>
+      </div>
+
       <AnimatePresence>
         {playerState === 'buffering' && (
           <motion.div
@@ -463,7 +782,6 @@ export default function Player() {
         )}
       </AnimatePresence>
 
-      {/* Loading State */}
       <AnimatePresence>
         {playerState === 'loading' && (
           <motion.div
@@ -482,7 +800,6 @@ export default function Player() {
         )}
       </AnimatePresence>
 
-      {/* Error State */}
       <AnimatePresence>
         {playerState === 'error' && (
           <motion.div
@@ -498,7 +815,6 @@ export default function Player() {
         )}
       </AnimatePresence>
 
-      {/* Gesture Hint */}
       <AnimatePresence>
         {showGestureHint && (
           <motion.div
@@ -514,25 +830,109 @@ export default function Player() {
         )}
       </AnimatePresence>
 
-      {/* Subtitle Display */}
       <AnimatePresence>
-        {showSubtitles && activeSubtitle !== null && (
+        {swipeSeekIndicator && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
+          >
+            <div className="bg-black/80 backdrop-blur-md px-8 py-4 rounded-2xl">
+              <span className="text-3xl font-bold text-white">
+                {swipeSeekIndicator.direction}{swipeSeekIndicator.amount}s
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showBrightness && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-30"
+          >
+            <div className="flex flex-col items-center gap-2 bg-black/70 backdrop-blur-md rounded-xl p-2">
+              <Sun className="w-4 h-4 text-yellow-400" />
+              <div className="w-1 h-24 bg-white/20 rounded-full relative">
+                <div
+                  className="absolute bottom-0 left-0 right-0 bg-yellow-400 rounded-full"
+                  style={{ height: `${brightness * 100}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-white/60">{Math.round(brightness * 100)}%</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {subtitleNotification && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             className="absolute bottom-32 left-1/2 -translate-x-1/2 pointer-events-none z-40"
           >
-            <div className="bg-black/80 backdrop-blur-md px-6 py-3 rounded-xl">
-              <p className="text-sm text-white/90 font-medium">
-                Subtitle Track {activeSubtitle} Active
-              </p>
+            <div className="bg-black/80 backdrop-blur-md px-5 py-2.5 rounded-xl">
+              <p className="text-sm text-white/90 font-medium">{subtitleNotification}</p>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Subtitle Track Menu */}
+      <AnimatePresence>
+        {showAutoplayCountdown && neighbors?.next && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="absolute inset-0 flex items-center justify-center z-50 pointer-events-auto"
+          >
+            <div className="bg-black/90 backdrop-blur-xl rounded-3xl p-8 text-center max-w-sm">
+              <p className="text-white/60 text-sm mb-2">Next Episode</p>
+              <p className="text-white text-lg font-medium mb-4 truncate">
+                {neighbors.next.filename.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
+              </p>
+              <div className="relative mb-4">
+                <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden">
+                  <motion.div
+                    className="h-full bg-vn-accent"
+                    animate={{ width: `${((5 - autoplayCountdown) / 5) * 100}%` }}
+                    transition={{ duration: 1, ease: 'linear' }}
+                  />
+                </div>
+                <p className="text-vn-accent text-2xl font-bold mt-2">{autoplayCountdown}</p>
+              </div>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => {
+                    setShowAutoplayCountdown(false)
+                    if (autoplayTimer.current) clearInterval(autoplayTimer.current)
+                  }}
+                  className="px-4 py-2 bg-white/10 rounded-xl text-sm hover:bg-white/20 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAutoplayCountdown(false)
+                    if (autoplayTimer.current) clearInterval(autoplayTimer.current)
+                    navigate(`/watch/${neighbors.next.id}`)
+                  }}
+                  className="px-4 py-2 bg-vn-accent rounded-xl text-sm hover:bg-vn-hover transition-colors"
+                >
+                  Play Now
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showSubtitleMenu && (
           <motion.div
@@ -544,7 +944,12 @@ export default function Player() {
             <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-3 min-w-[200px] shadow-2xl">
               <p className="text-[10px] text-white/50 mb-2 uppercase tracking-wider">Subtitles</p>
               <button
-                onClick={() => { setActiveSubtitle(null); setShowSubtitleMenu(false); setShowSubtitles(false) }}
+                onClick={() => {
+                  setActiveSubtitle(null)
+                  setShowSubtitles(false)
+                  setShowSubtitleMenu(false)
+                  showNotification('Subtitles Off')
+                }}
                 className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
                   activeSubtitle === null ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
                 }`}
@@ -554,7 +959,12 @@ export default function Player() {
               {subtitleTracks.map((track: any) => (
                 <button
                   key={track.index}
-                  onClick={() => { setActiveSubtitle(track.index); setShowSubtitleMenu(false); setShowSubtitles(true) }}
+                  onClick={() => {
+                    setActiveSubtitle(track.index)
+                    setShowSubtitles(true)
+                    setShowSubtitleMenu(false)
+                    showNotification(`Subtitles: ${track.title || track.language || 'Track ' + track.index}`)
+                  }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
                     activeSubtitle === track.index ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
                   }`}
@@ -562,12 +972,170 @@ export default function Player() {
                   {track.title || track.language || `Track ${track.index}`}
                 </button>
               ))}
+              <hr className="border-white/10 my-2" />
+              <button
+                onClick={() => { setShowSubtitleMenu(false); setShowSubtitleSettings(true) }}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 text-white/80"
+              >
+                Subtitle Settings
+              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Controls Overlay */}
+      <AnimatePresence>
+        {showSubtitleSettings && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-50"
+          >
+            <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-4 w-72 shadow-2xl max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm font-medium">Subtitle Settings</p>
+                <button onClick={() => setShowSubtitleSettings(false)} className="text-white/50 hover:text-white text-xs">Close</button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Font Size</label>
+                  <input
+                    type="range" min="12" max="48" step="2"
+                    value={subtitlePrefs?.font_size || 24}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value)
+                      updateSubtitlePrefsMutation.mutate({ font_size: val })
+                      applySubtitleStyles({ ...subtitlePrefs, font_size: val })
+                    }}
+                    className="w-full mt-1 accent-vn-accent"
+                  />
+                  <span className="text-xs text-white/60">{subtitlePrefs?.font_size || 24}px</span>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Color</label>
+                  <div className="flex gap-2 mt-1">
+                    {['#FFFFFF', '#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#FF6600'].map(color => (
+                      <button
+                        key={color}
+                        onClick={() => {
+                          updateSubtitlePrefsMutation.mutate({ color })
+                          applySubtitleStyles({ ...subtitlePrefs, color })
+                        }}
+                        className={`w-6 h-6 rounded-full border-2 ${subtitlePrefs?.color === color ? 'border-vn-accent' : 'border-transparent'}`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Background</label>
+                  <input
+                    type="range" min="0" max="1" step="0.1"
+                    value={subtitlePrefs?.background_opacity ?? 0.5}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value)
+                      updateSubtitlePrefsMutation.mutate({ background_opacity: val })
+                      applySubtitleStyles({ ...subtitlePrefs, background_opacity: val })
+                    }}
+                    className="w-full mt-1 accent-vn-accent"
+                  />
+                  <span className="text-xs text-white/60">{Math.round((subtitlePrefs?.background_opacity ?? 0.5) * 100)}%</span>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Outline</label>
+                  <div className="flex items-center gap-3 mt-1">
+                    <button
+                      onClick={() => {
+                        const val = !subtitlePrefs?.outline
+                        updateSubtitlePrefsMutation.mutate({ outline: val })
+                        applySubtitleStyles({ ...subtitlePrefs, outline: val })
+                      }}
+                      className={`w-10 h-5 rounded-full transition-colors ${subtitlePrefs?.outline ? 'bg-vn-accent' : 'bg-white/20'}`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${subtitlePrefs?.outline ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                    {subtitlePrefs?.outline && (
+                      <input
+                        type="range" min="1" max="4" step="1"
+                        value={subtitlePrefs?.outline_width || 2}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value)
+                          updateSubtitlePrefsMutation.mutate({ outline_width: val })
+                          applySubtitleStyles({ ...subtitlePrefs, outline_width: val })
+                        }}
+                        className="flex-1 accent-vn-accent"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Shadow</label>
+                  <div className="flex items-center gap-3 mt-1">
+                    <button
+                      onClick={() => {
+                        const val = !subtitlePrefs?.shadow
+                        updateSubtitlePrefsMutation.mutate({ shadow: val })
+                        applySubtitleStyles({ ...subtitlePrefs, shadow: val })
+                      }}
+                      className={`w-10 h-5 rounded-full transition-colors ${subtitlePrefs?.shadow ? 'bg-vn-accent' : 'bg-white/20'}`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${subtitlePrefs?.shadow ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                    {subtitlePrefs?.shadow && (
+                      <input
+                        type="range" min="1" max="6" step="1"
+                        value={subtitlePrefs?.shadow_offset || 2}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value)
+                          updateSubtitlePrefsMutation.mutate({ shadow_offset: val })
+                          applySubtitleStyles({ ...subtitlePrefs, shadow_offset: val })
+                        }}
+                        className="flex-1 accent-vn-accent"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Position</label>
+                  <input
+                    type="range" min="10" max="200" step="5"
+                    value={subtitlePrefs?.position ?? 100}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value)
+                      updateSubtitlePrefsMutation.mutate({ position: val })
+                      applySubtitleStyles({ ...subtitlePrefs, position: val })
+                    }}
+                    className="w-full mt-1 accent-vn-accent"
+                  />
+                  <span className="text-xs text-white/60">{subtitlePrefs?.position ?? 100}px from bottom</span>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Delay</label>
+                  <input
+                    type="range" min="-2" max="2" step="0.1"
+                    value={subtitlePrefs?.delay ?? 0}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value)
+                      updateSubtitlePrefsMutation.mutate({ delay: val })
+                    }}
+                    className="w-full mt-1 accent-vn-accent"
+                  />
+                  <span className="text-xs text-white/60">{(subtitlePrefs?.delay ?? 0).toFixed(1)}s</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showControls && playerState !== 'loading' && playerState !== 'error' && (
           <motion.div
@@ -577,10 +1145,8 @@ export default function Player() {
             transition={{ duration: 0.3 }}
             className="absolute inset-0 pointer-events-none z-30"
           >
-            {/* Top Gradient */}
             <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-auto" />
 
-            {/* Top Bar */}
             <div className="absolute top-0 left-0 right-0 p-4 sm:p-6 pointer-events-auto">
               <motion.div
                 initial={{ y: -20, opacity: 0 }}
@@ -615,9 +1181,21 @@ export default function Player() {
               </motion.div>
             </div>
 
-            {/* Center Controls */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="flex items-center gap-4 sm:gap-6 pointer-events-auto">
+              <div className="flex items-center gap-3 sm:gap-6 pointer-events-auto">
+                {neighbors?.prev && (
+                  <motion.button
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => navigate(`/watch/${neighbors.prev.id}`)}
+                    className="p-3 sm:p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
+                               transition-all duration-200"
+                    aria-label="Previous episode"
+                  >
+                    <ChevronLeft className="w-6 h-6 sm:w-7 sm:h-7" />
+                  </motion.button>
+                )}
+
                 <motion.button
                   whileHover={{ scale: 1.08 }}
                   whileTap={{ scale: 0.92 }}
@@ -654,16 +1232,26 @@ export default function Player() {
                 >
                   <SkipForward className="w-6 h-6 sm:w-8 sm:h-8" />
                 </motion.button>
+
+                {neighbors?.next && (
+                  <motion.button
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => navigate(`/watch/${neighbors.next.id}`)}
+                    className="p-3 sm:p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
+                               transition-all duration-200"
+                    aria-label="Next episode"
+                  >
+                    <ChevronRight className="w-6 h-6 sm:w-7 sm:h-7" />
+                  </motion.button>
+                )}
               </div>
             </div>
 
-            {/* Bottom Gradient */}
             <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-auto" />
 
-            {/* Bottom Controls */}
             <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 pointer-events-auto">
               <div className="max-w-6xl mx-auto space-y-3">
-                {/* Timeline */}
                 <div
                   ref={progressRef}
                   className="relative h-1.5 sm:h-2 bg-white/20 rounded-full cursor-pointer group"
@@ -674,21 +1262,16 @@ export default function Player() {
                   onMouseMoveCapture={handleProgressDrag}
                   onMouseUp={handleProgressDragEnd}
                 >
-                  {/* Buffered */}
                   <div
                     className="absolute h-full bg-white/30 rounded-full"
                     style={{ width: `${bufferedPercent}%` }}
                   />
-
-                  {/* Progress */}
                   <motion.div
                     className="absolute h-full bg-vn-accent rounded-full"
                     style={{ width: `${isDragging ? (dragTime / duration) * 100 : progressPercent}%` }}
                     layout
                     transition={{ duration: 0.1 }}
                   />
-
-                  {/* Thumb */}
                   <motion.div
                     className="absolute w-4 h-4 bg-vn-accent rounded-full -translate-y-1/2 top-1/2 
                                opacity-0 group-hover:opacity-100 transition-opacity duration-200
@@ -697,8 +1280,6 @@ export default function Player() {
                       left: `calc(${isDragging ? (dragTime / duration) * 100 : progressPercent}% - 8px)` 
                     }}
                   />
-
-                  {/* Hover Time Preview */}
                   <AnimatePresence>
                     {showHoverTime && (
                       <motion.div
@@ -715,9 +1296,7 @@ export default function Player() {
                   </AnimatePresence>
                 </div>
 
-                {/* Bottom Row */}
                 <div className="flex items-center justify-between">
-                  {/* Left Controls */}
                   <div className="flex items-center gap-2 sm:gap-3">
                     <motion.button
                       whileHover={{ scale: 1.1 }}
@@ -738,7 +1317,7 @@ export default function Player() {
                     </span>
 
                     <div
-                      className="relative group/vol"
+                      className="relative flex items-center group/vol"
                       onMouseEnter={() => setShowVolumeSlider(true)}
                       onMouseLeave={() => setShowVolumeSlider(false)}
                     >
@@ -751,39 +1330,52 @@ export default function Player() {
                       >
                         {isMuted || volume === 0 ? (
                           <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />
-                        ) : volume < 0.5 ? (
-                          <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
                         ) : (
                           <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
                         )}
                       </motion.button>
-                      {showVolumeSlider && (
-                        <div
-                          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-2 bg-black/95 backdrop-blur-xl rounded-xl"
-                        >
-                          <div
-                            className="relative w-24 h-32 bg-white/10 rounded-full cursor-pointer group/slider"
-                            onClick={handleVolumeChange}
+                      <AnimatePresence>
+                        {showVolumeSlider && (
+                          <motion.div
+                            initial={{ opacity: 0, width: 0 }}
+                            animate={{ opacity: 1, width: 'auto' }}
+                            exit={{ opacity: 0, width: 0 }}
+                            className="overflow-hidden"
                           >
-                            <div
-                              className="absolute bottom-0 left-0 right-0 bg-vn-accent rounded-full"
-                              style={{ height: `${volume * 100}%` }}
-                            />
-                            <div
-                              className="absolute left-1/2 -translate-x-1/2 w-4 h-4 bg-white rounded-full shadow-lg
-                                         transition-transform group-hover/slider:scale-125"
-                              style={{ bottom: `calc(${volume * 100}% - 8px)` }}
-                            />
-                          </div>
-                          <p className="text-[10px] text-white/50 text-center mt-2">{Math.round(volume * 100)}%</p>
-                        </div>
-                      )}
+                            <div className="flex items-center gap-1.5 px-1">
+                              <div
+                                className="relative w-1 h-24 bg-white/20 rounded-full cursor-pointer"
+                                onClick={handleVolumeChange}
+                              >
+                                <div
+                                  className="absolute bottom-0 left-0 right-0 bg-vn-accent rounded-full transition-all"
+                                  style={{ height: `${volume * 100}%` }}
+                                />
+                                <div
+                                  className="absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-md
+                                             transition-transform hover:scale-125"
+                                  style={{ bottom: `calc(${volume * 100}% - 6px)` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-white/50 w-8 text-center">{Math.round(volume * 100)}</span>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
 
-                  {/* Right Controls */}
                   <div className="flex items-center gap-1 sm:gap-2">
-                    {/* Subtitles */}
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={takeScreenshot}
+                      className="p-2 rounded-xl hover:bg-white/10 transition-all hidden sm:flex"
+                      aria-label="Take screenshot"
+                    >
+                      <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </motion.button>
+
                     <div className="relative">
                       <motion.button
                         whileHover={{ scale: 1.1 }}
@@ -794,9 +1386,11 @@ export default function Player() {
                             if (activeSubtitle !== null) {
                               setActiveSubtitle(null)
                               setShowSubtitles(false)
+                              showNotification('Subtitles Off')
                             } else {
                               setActiveSubtitle(subtitleTracks[0].index)
                               setShowSubtitles(true)
+                              showNotification(`Subtitles: ${subtitleTracks[0].title || subtitleTracks[0].language || 'Track ' + subtitleTracks[0].index}`)
                             }
                           } else {
                             setShowSubtitleMenu(s => !s)
@@ -811,7 +1405,6 @@ export default function Player() {
                       </motion.button>
                     </div>
 
-                    {/* Speed */}
                     <div className="relative">
                       <motion.button
                         whileHover={{ scale: 1.1 }}
@@ -855,7 +1448,6 @@ export default function Player() {
                       </AnimatePresence>
                     </div>
 
-                    {/* Autoplay */}
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
@@ -866,7 +1458,16 @@ export default function Player() {
                       <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
                     </motion.button>
 
-                    {/* PiP */}
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => setCinemaMode(c => !c)}
+                      className={`p-2 rounded-xl transition-all ${cinemaMode ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
+                      aria-label="Toggle cinema mode"
+                    >
+                      {cinemaMode ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
+                    </motion.button>
+
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
@@ -877,7 +1478,6 @@ export default function Player() {
                       <PictureInPicture className="w-5 h-5" />
                     </motion.button>
 
-                    {/* Fullscreen */}
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}

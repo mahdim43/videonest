@@ -1,13 +1,14 @@
 import os
 import subprocess
 import json
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
 from app.core.database import get_db
-from app.models.models import Video
+from app.models.models import Video, Folder
 from app.models.schemas import VideoResponse
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
@@ -27,6 +28,7 @@ async def get_videos(
         conditions = [Video.filename.ilike(f"%{word}%") for word in words if word]
         if conditions:
             query = query.where(or_(*conditions))
+    query = query.order_by(Video.filename)
     result = await db.execute(query)
     return result.scalars().all()
 
@@ -38,6 +40,44 @@ async def get_video(video_id: int, db: AsyncSession = Depends(get_db)):
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
     return video
+
+
+@router.get("/{video_id}/neighbors")
+async def get_neighbor_videos(video_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Video).where(Video.id == video_id))
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    siblings_result = await db.execute(
+        select(Video)
+        .where(Video.folder_id == video.folder_id)
+        .order_by(Video.filename)
+    )
+    siblings = list(siblings_result.scalars().all())
+
+    current_idx = next((i for i, v in enumerate(siblings) if v.id == video_id), 0)
+
+    prev_video = siblings[current_idx - 1] if current_idx > 0 else None
+    next_video = siblings[current_idx + 1] if current_idx < len(siblings) - 1 else None
+
+    return {
+        "prev": {"id": prev_video.id, "filename": prev_video.filename} if prev_video else None,
+        "next": {"id": next_video.id, "filename": next_video.filename} if next_video else None,
+    }
+
+
+@router.get("/{video_id}/thumbnail")
+async def get_thumbnail(video_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Video).where(Video.id == video_id))
+    video = result.scalar_one_or_none()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    if video.thumbnail_path and os.path.exists(video.thumbnail_path):
+        return FileResponse(video.thumbnail_path, media_type="image/jpeg")
+
+    raise HTTPException(status_code=404, detail="Thumbnail not found")
 
 
 @router.get("/{video_id}/subtitles")
