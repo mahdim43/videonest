@@ -65,7 +65,6 @@ export default function Player() {
   const ambientInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
   const pinchStartRef = useRef<number | null>(null)
-  const doubleTapRef = useRef(false)
   const volumeSliderRef = useRef<HTMLDivElement>(null)
 
   const { data: video } = useQuery({
@@ -474,6 +473,12 @@ export default function Player() {
     document.addEventListener('mouseup', onUp)
   }, [])
 
+  const handleVideoInteraction = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.vn-controls')) return
+    setShowControls(prev => !prev)
+    if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+  }, [])
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -0.05 : 0.05
@@ -492,7 +497,6 @@ export default function Player() {
       return
     }
 
-    doubleTapRef.current = false
     const touch = e.touches[0]
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
 
@@ -507,7 +511,6 @@ export default function Player() {
     const x = touch.clientX
 
     if (timeSinceLastTap < 300) {
-      doubleTapRef.current = true
       if (x < screenWidth * 0.3) {
         skip(-5)
         setShowGestureHint('-5s')
@@ -574,18 +577,6 @@ export default function Player() {
       const amount = swipeSeekIndicator.direction === '+' ? swipeSeekIndicator.amount : -swipeSeekIndicator.amount
       seek(currentTime + amount)
       setSwipeSeekIndicator(null)
-    }
-
-    if (touchStartRef.current && e.changedTouches.length === 1) {
-      const touch = e.changedTouches[0]
-      const dx = touch.clientX - touchStartRef.current.x
-      const dy = touch.clientY - touchStartRef.current.y
-      const elapsed = Date.now() - touchStartRef.current.time
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && elapsed < 300 && !doubleTapRef.current) {
-        setShowControls(prev => !prev)
-        if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
-      }
-      doubleTapRef.current = false
     }
 
     touchStartRef.current = null
@@ -729,11 +720,6 @@ export default function Player() {
       onMouseLeave={() => {
         if (playerState === 'playing') setShowControls(false)
       }}
-      onDoubleClick={(e) => {
-        if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'VIDEO') {
-          toggleFullscreen()
-        }
-      }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -773,6 +759,7 @@ export default function Player() {
           onPlay={() => setPlayerState('playing')}
           onPause={() => setPlayerState('paused')}
           onError={() => setPlayerState('error')}
+          onClick={handleVideoInteraction}
           playsInline
         >
           {subtitleTracks.map((track: any) => (
@@ -1182,7 +1169,7 @@ export default function Player() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="absolute inset-0 pointer-events-none z-30"
+            className="absolute inset-0 pointer-events-none z-30 vn-controls"
           >
             <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-auto" />
 
