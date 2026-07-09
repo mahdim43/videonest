@@ -195,8 +195,13 @@ export default function Player() {
             }
             setActiveCues(active)
           }
-          tracks[i].oncuechange = handler
-          handler()
+          const track = tracks[i]
+          track.oncuechange = handler
+          if (track.cues && track.cues.length > 0) {
+            handler()
+          } else {
+            track.addEventListener('load', () => handler(), { once: true })
+          }
           break
         }
       }
@@ -759,7 +764,6 @@ export default function Player() {
           onPlay={() => setPlayerState('playing')}
           onPause={() => setPlayerState('paused')}
           onError={() => setPlayerState('error')}
-          onClick={handleVideoInteraction}
           playsInline
         >
           {subtitleTracks.map((track: any) => (
@@ -772,6 +776,16 @@ export default function Player() {
             />
           ))}
         </video>
+
+        <div
+          className="absolute inset-0 z-15"
+          onClick={handleVideoInteraction}
+          onTouchEnd={(e) => {
+            if ((e.target as HTMLElement).closest('.vn-controls')) return
+            setShowControls(prev => !prev)
+            if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+          }}
+        />
 
         {activeCues.length > 0 && showSubtitles && (
           <div
