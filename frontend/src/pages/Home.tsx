@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { videosApi, historyApi, favoritesApi, foldersApi } from '../api/client'
 import { useProfileStore } from '../stores/profileStore'
 import { motion } from 'framer-motion'
-import { Play, Heart, Folder, Search, Settings, Clock, Film, Loader2 } from 'lucide-react'
+import { Play, Heart, Folder, Search, Settings, Clock, Film, Loader2, ArrowUpDown, ChevronDown } from 'lucide-react'
 import { useState, useEffect } from 'react'
+
+type SortMode = 'recent' | 'az' | 'za'
 
 export default function Home() {
   const { profileId } = useParams<{ profileId: string }>()
@@ -14,6 +16,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [sortMode, setSortMode] = useState<SortMode>('recent')
 
   useEffect(() => {
     if (!currentProfile && profileId) {
@@ -66,9 +69,39 @@ export default function Home() {
   })
 
   const continueWatching = history.filter((h: any) => !h.completed && h.video).slice(0, 6)
-  const recentlyAdded = [...videos].sort((a: any, b: any) =>
-    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  )
+
+  const watchedMap = new Map<number, number>()
+  history.forEach((h: any) => {
+    if (h.duration > 0) {
+      watchedMap.set(h.video_id, Math.round((h.position / h.duration) * 100))
+    }
+  })
+
+  const sortedVideos = [...videos].sort((a: any, b: any) => {
+    switch (sortMode) {
+      case 'az':
+        return a.filename.localeCompare(b.filename)
+      case 'za':
+        return b.filename.localeCompare(a.filename)
+      case 'recent':
+      default:
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    }
+  })
+
+  const sortLabels: Record<SortMode, string> = {
+    recent: 'Recently Added',
+    az: 'A → Z',
+    za: 'Z → A',
+  }
+
+  const cycleSortMode = () => {
+    setSortMode(prev => {
+      if (prev === 'recent') return 'az'
+      if (prev === 'az') return 'za'
+      return 'recent'
+    })
+  }
 
   return (
     <div className="min-h-screen bg-vn-bg">
@@ -108,36 +141,43 @@ export default function Home() {
       <main className="max-w-7xl mx-auto px-4 py-8 space-y-12">
         {continueWatching.length > 0 && (
           <section>
-            <h2 className="text-xl font-heading font-semibold mb-4 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-vn-accent" />
-              Continue Watching
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {continueWatching.map((item: any) => (
-                <motion.button
-                  key={item.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => navigate(`/watch/${item.video_id}`)}
-                  className="bg-vn-card rounded-xl p-4 text-left hover:bg-vn-panel 
-                             transition-colors group"
-                >
-                  <div className="aspect-video bg-vn-panel rounded-lg mb-3 flex items-center 
-                                  justify-center overflow-hidden">
-                    <Play className="w-8 h-8 text-vn-text-secondary group-hover:text-vn-accent" />
-                  </div>
-                  <p className="text-sm text-vn-text truncate">{item.video?.filename}</p>
-                  <div className="mt-2 h-1 bg-vn-panel rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-vn-accent"
-                      style={{ width: `${(item.position / item.duration) * 100}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-vn-text-secondary mt-1">
-                    {Math.floor((item.duration - item.position) / 3600)}h {Math.floor(((item.duration - item.position) % 3600) / 60)}m left
-                  </p>
-                </motion.button>
-              ))}
+            <div className="bg-vn-card rounded-2xl p-5 border border-vn-panel">
+              <h2 className="text-lg font-heading font-semibold mb-4 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-vn-accent" />
+                Continue Watching
+                <span className="text-xs text-vn-text-secondary font-normal ml-auto">
+                  {continueWatching.length} {continueWatching.length === 1 ? 'video' : 'videos'}
+                </span>
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {continueWatching.map((item: any) => (
+                  <motion.button
+                    key={item.id}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => navigate(`/watch/${item.video_id}`)}
+                    className="bg-vn-panel rounded-xl p-3 text-left hover:bg-vn-bg 
+                               transition-colors group"
+                  >
+                    <div className="aspect-video bg-vn-bg rounded-lg mb-2 flex items-center 
+                                    justify-center overflow-hidden">
+                      <Play className="w-7 h-7 text-vn-text-secondary group-hover:text-vn-accent" />
+                    </div>
+                    <p className="text-xs text-vn-text truncate mb-1.5">
+                      {item.video?.filename?.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
+                    </p>
+                    <div className="h-1 bg-vn-bg rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-vn-accent"
+                        style={{ width: `${(item.position / item.duration) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-vn-text-secondary mt-1">
+                      {Math.round((item.position / item.duration) * 100)}% watched
+                    </p>
+                  </motion.button>
+                ))}
+              </div>
             </div>
           </section>
         )}
@@ -147,7 +187,7 @@ export default function Home() {
             <h2 className="text-xl font-heading font-semibold mb-4">
               Search Results for "{searchQuery}"
             </h2>
-            <VideoGrid videos={videos} onPlay={(id) => navigate(`/watch/${id}`)} />
+            <VideoGrid videos={sortedVideos} onPlay={(id) => navigate(`/watch/${id}`)} watchedMap={watchedMap} />
           </section>
         ) : (
           <>
@@ -169,11 +209,22 @@ export default function Home() {
             <section>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-heading font-semibold">
-                  {selectedFolder ? 'Folder Videos' : 'Recently Added'}
+                  {selectedFolder ? 'Folder Videos' : sortLabels[sortMode]}
                 </h2>
+                {!selectedFolder && (
+                  <button
+                    onClick={cycleSortMode}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-vn-panel hover:bg-vn-card
+                               text-sm text-vn-text-secondary hover:text-vn-text transition-colors"
+                  >
+                    <ArrowUpDown className="w-4 h-4" />
+                    {sortLabels[sortMode]}
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                )}
               </div>
-              <VideoGrid videos={recentlyAdded} onPlay={(id) => navigate(`/watch/${id}`)} />
-              {recentlyAdded.length === 0 && folders.length > 0 && (
+              <VideoGrid videos={sortedVideos} onPlay={(id) => navigate(`/watch/${id}`)} watchedMap={watchedMap} />
+              {sortedVideos.length === 0 && folders.length > 0 && (
                 <div className="text-center py-12">
                   <Film className="w-16 h-16 text-vn-text-secondary mx-auto mb-4" />
                   <p className="text-vn-text-secondary mb-4">No videos found</p>
@@ -194,7 +245,7 @@ export default function Home() {
                   </motion.button>
                 </div>
               )}
-              {recentlyAdded.length === 0 && folders.length === 0 && (
+              {sortedVideos.length === 0 && folders.length === 0 && (
                 <div className="text-center py-12">
                   <Folder className="w-16 h-16 text-vn-text-secondary mx-auto mb-4" />
                   <p className="text-vn-text-secondary mb-4">No folders added yet</p>
@@ -220,6 +271,7 @@ export default function Home() {
                 <VideoGrid
                   videos={favorites.map((f: any) => f.video).filter(Boolean)}
                   onPlay={(id) => navigate(`/watch/${id}`)}
+                  watchedMap={watchedMap}
                 />
               </section>
             )}
@@ -260,39 +312,61 @@ export default function Home() {
   )
 }
 
-function VideoGrid({ videos, onPlay }: { videos: any[]; onPlay: (id: number) => void }) {
+function VideoGrid({ videos, onPlay, watchedMap }: { videos: any[]; onPlay: (id: number) => void; watchedMap: Map<number, number> }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-      {videos.map((video: any) => (
-        <motion.button
-          key={video.id}
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={() => onPlay(video.id)}
-          className="bg-vn-card rounded-xl overflow-hidden text-left hover:bg-vn-panel 
-                     transition-all duration-200 group"
-        >
-          <div className="aspect-video bg-vn-panel flex items-center justify-center relative overflow-hidden">
-            <Play className="w-10 h-10 text-vn-text-secondary group-hover:text-vn-accent 
-                           group-hover:scale-110 transition-all duration-200" />
-            {video.resolution && (
-              <span className="absolute top-2 right-2 text-[10px] bg-black/60 px-1.5 py-0.5 rounded text-white/80">
-                {video.resolution}
-              </span>
-            )}
-          </div>
-          <div className="p-3">
-            <p className="text-xs text-vn-text leading-tight line-clamp-2 group-hover:text-white transition-colors min-h-[2rem]">
-              {video.filename.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
-            </p>
-            {video.duration && (
-              <p className="text-xs text-vn-text-secondary mt-1">
-                {Math.floor(video.duration / 3600)}h {Math.floor((video.duration % 3600) / 60)}m
+      {videos.map((video: any) => {
+        const watched = watchedMap.get(video.id)
+        return (
+          <motion.button
+            key={video.id}
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => onPlay(video.id)}
+            className="bg-vn-card rounded-xl overflow-hidden text-left hover:bg-vn-panel 
+                       transition-all duration-200 group"
+          >
+            <div className="aspect-video bg-vn-panel flex items-center justify-center relative overflow-hidden">
+              {video.thumbnail_path ? (
+                <img
+                  src={`/api/videos/${video.id}/thumbnail`}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                />
+              ) : (
+                <Play className="w-10 h-10 text-vn-text-secondary group-hover:text-vn-accent 
+                               group-hover:scale-110 transition-all duration-200" />
+              )}
+              {video.resolution && (
+                <span className="absolute top-2 right-2 text-[10px] bg-black/60 px-1.5 py-0.5 rounded text-white/80">
+                  {video.resolution}
+                </span>
+              )}
+              {watched !== undefined && watched > 0 && (
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/50">
+                  <div className="h-full bg-vn-accent" style={{ width: `${watched}%` }} />
+                </div>
+              )}
+            </div>
+            <div className="p-3">
+              <p className="text-xs text-vn-text leading-tight line-clamp-2 group-hover:text-white transition-colors min-h-[2rem]">
+                {video.filename.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
               </p>
-            )}
-          </div>
-        </motion.button>
-      ))}
+              <div className="flex items-center justify-between mt-1">
+                {video.duration && (
+                  <p className="text-xs text-vn-text-secondary">
+                    {Math.floor(video.duration / 3600)}h {Math.floor((video.duration % 3600) / 60)}m
+                  </p>
+                )}
+                {watched !== undefined && watched > 0 && (
+                  <p className="text-[10px] text-vn-accent font-medium">{watched}%</p>
+                )}
+              </div>
+            </div>
+          </motion.button>
+        )
+      })}
     </div>
   )
 }

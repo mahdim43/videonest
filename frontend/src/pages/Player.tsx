@@ -1317,15 +1317,67 @@ export default function Player() {
                     </span>
 
                     <div
-                      className="relative flex items-center group/vol"
+                      className="relative"
                       onMouseEnter={() => setShowVolumeSlider(true)}
                       onMouseLeave={() => setShowVolumeSlider(false)}
                     >
+                      <AnimatePresence>
+                        {showVolumeSlider && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-auto"
+                          >
+                            <div className="bg-black/90 backdrop-blur-xl rounded-xl p-2.5 flex flex-col items-center">
+                              <span className="text-[10px] text-white/50 mb-1.5">{Math.round(volume * 100)}%</span>
+                              <div
+                                ref={(el) => {
+                                  if (!el) return
+                                  const handleMouseDown = (e: React.MouseEvent) => {
+                                    e.preventDefault()
+                                    const updateVol = (ev: MouseEvent) => {
+                                      const rect = el.getBoundingClientRect()
+                                      const pos = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
+                                      if (videoRef.current) {
+                                        videoRef.current.volume = pos
+                                        videoRef.current.muted = false
+                                      }
+                                      setVolume(pos)
+                                      setIsMuted(false)
+                                    }
+                                    updateVol(e.nativeEvent)
+                                    const onMove = (ev: MouseEvent) => updateVol(ev)
+                                    const onUp = () => {
+                                      document.removeEventListener('mousemove', onMove)
+                                      document.removeEventListener('mouseup', onUp)
+                                    }
+                                    document.addEventListener('mousemove', onMove)
+                                    document.addEventListener('mouseup', onUp)
+                                  }
+                                  el.onmousedown = handleMouseDown as any
+                                }}
+                                className="relative w-32 h-2 bg-white/20 rounded-full cursor-pointer"
+                              >
+                                <div
+                                  className="absolute top-0 left-0 h-full bg-vn-accent rounded-full"
+                                  style={{ width: `${volume * 100}%` }}
+                                />
+                                <div
+                                  className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-lg
+                                             transition-transform hover:scale-125 pointer-events-none"
+                                  style={{ left: `calc(${volume * 100}% - 7px)` }}
+                                />
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                       <motion.button
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.9 }}
                         onClick={toggleMute}
-                        className="p-2 rounded-xl hover:bg-white/10 transition-all"
+                        className="p-2 rounded-xl hover:bg-white/10 transition-all pointer-events-auto"
                         aria-label={isMuted ? 'Unmute' : 'Mute'}
                       >
                         {isMuted || volume === 0 ? (
@@ -1334,34 +1386,6 @@ export default function Player() {
                           <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
                         )}
                       </motion.button>
-                      <AnimatePresence>
-                        {showVolumeSlider && (
-                          <motion.div
-                            initial={{ opacity: 0, width: 0 }}
-                            animate={{ opacity: 1, width: 'auto' }}
-                            exit={{ opacity: 0, width: 0 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="flex items-center gap-1.5 px-1">
-                              <div
-                                className="relative w-1 h-24 bg-white/20 rounded-full cursor-pointer"
-                                onClick={handleVolumeChange}
-                              >
-                                <div
-                                  className="absolute bottom-0 left-0 right-0 bg-vn-accent rounded-full transition-all"
-                                  style={{ height: `${volume * 100}%` }}
-                                />
-                                <div
-                                  className="absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-md
-                                             transition-transform hover:scale-125"
-                                  style={{ bottom: `calc(${volume * 100}% - 6px)` }}
-                                />
-                              </div>
-                              <span className="text-[10px] text-white/50 w-8 text-center">{Math.round(volume * 100)}</span>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
                     </div>
                   </div>
 
