@@ -118,8 +118,16 @@ export default function Player() {
     queryKey: ['subtitlePrefs', currentProfile?.id],
     queryFn: async () => {
       if (!currentProfile) return null
-      const res = await subtitlePrefsApi.get(currentProfile.id)
-      return res.data
+      const storageKey = `vn_sub_prefs_${currentProfile.id}`
+      const local = localStorage.getItem(storageKey)
+      if (local) return JSON.parse(local)
+      try {
+        const res = await subtitlePrefsApi.get(currentProfile.id)
+        localStorage.setItem(storageKey, JSON.stringify(res.data))
+        return res.data
+      } catch {
+        return null
+      }
     },
     enabled: !!currentProfile,
   })
@@ -127,6 +135,10 @@ export default function Player() {
   const updateSubtitlePrefsMutation = useMutation({
     mutationFn: (data: any) => {
       if (!currentProfile) throw new Error('No profile')
+      const storageKey = `vn_sub_prefs_${currentProfile.id}`
+      const existing = localStorage.getItem(storageKey)
+      const merged = { ...(existing ? JSON.parse(existing) : {}), ...data }
+      localStorage.setItem(storageKey, JSON.stringify(merged))
       return subtitlePrefsApi.update(currentProfile.id, data)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['subtitlePrefs'] }),
@@ -220,13 +232,19 @@ export default function Player() {
     setIsMuted(video.muted)
   }, [])
 
-  const toggleFullscreen = useCallback(() => {
+  const toggleFullscreen = useCallback(async () => {
     const container = containerRef.current
     if (!container) return
     if (document.fullscreenElement) {
-      document.exitFullscreen()
+      await document.exitFullscreen()
+      try { await (screen.orientation as any).unlock?.() } catch {}
     } else {
-      container.requestFullscreen()
+      await container.requestFullscreen()
+      try {
+        if (screen.orientation?.lock) {
+          await screen.orientation.lock('landscape')
+        }
+      } catch {}
     }
   }, [])
 
@@ -558,9 +576,11 @@ export default function Player() {
     if (touchStartRef.current && e.changedTouches.length === 1) {
       const touch = e.changedTouches[0]
       const dx = touch.clientX - touchStartRef.current.x
+      const dy = touch.clientY - touchStartRef.current.y
       const elapsed = Date.now() - touchStartRef.current.time
-      if (Math.abs(dx) < 10 && elapsed < 200) {
-        // tap — already handled by double-tap logic
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && elapsed < 300) {
+        setShowControls(prev => !prev)
+        if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
       }
     }
 
@@ -749,7 +769,6 @@ export default function Player() {
           onPlay={() => setPlayerState('playing')}
           onPause={() => setPlayerState('paused')}
           onError={() => setPlayerState('error')}
-          onClick={togglePlay}
           playsInline
         >
           {subtitleTracks.map((track: any) => (
