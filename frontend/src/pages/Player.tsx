@@ -7,7 +7,7 @@ import {
   ArrowLeft, Heart, Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   SkipBack, SkipForward, PictureInPicture,
   Subtitles, ChevronRight, AlertCircle,
-  Camera, ChevronLeft, Sun, Moon
+  ChevronLeft, Sun, Moon, Settings as SettingsIcon
 } from 'lucide-react'
 import { useState, useRef, useEffect, useCallback } from 'react'
 
@@ -21,7 +21,7 @@ export default function Player() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLDivElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+
   const ambientCanvasRef = useRef<HTMLCanvasElement>(null)
 
   const [playerState, setPlayerState] = useState<PlayerState>('loading')
@@ -37,7 +37,9 @@ export default function Player() {
   const [showSubtitles, setShowSubtitles] = useState(true)
   const [activeSubtitle, setActiveSubtitle] = useState<number | null>(null)
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false)
-  const [showSubtitleSettings, setShowSubtitleSettings] = useState(false)
+  const [localPrefs, setLocalPrefs] = useState<any>(null)
+  const [activeCues, setActiveCues] = useState<string[]>([])
+
   const [subtitleNotification, setSubtitleNotification] = useState('')
   const [buffered, setBuffered] = useState(0)
   const [showGestureHint, setShowGestureHint] = useState('')
@@ -63,6 +65,7 @@ export default function Player() {
   const ambientInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
   const pinchStartRef = useRef<number | null>(null)
+  const volumeSliderRef = useRef<HTMLDivElement>(null)
 
   const { data: video } = useQuery({
     queryKey: ['video', videoId],
@@ -169,12 +172,34 @@ export default function Player() {
     if (trackIndex !== null) {
       for (let i = 0; i < tracks.length; i++) {
         if (i === 0 || tracks[i].language === `track${trackIndex}`) {
-          tracks[i].mode = 'showing'
+          tracks[i].mode = 'hidden'
+          const handler = () => {
+            const active: string[] = []
+            const cues = tracks[i].activeCues
+            if (cues) {
+              for (let j = 0; j < cues.length; j++) {
+                active.push((cues[j] as VTTCue).text || '')
+              }
+            }
+            setActiveCues(active)
+          }
+          tracks[i].oncuechange = handler
+          handler()
           break
         }
       }
+    } else {
+      setActiveCues([])
     }
   }, [])
+
+  useEffect(() => {
+    if (activeSubtitle !== null) {
+      applySubtitleTrack(activeSubtitle)
+    } else {
+      applySubtitleTrack(null)
+    }
+  }, [activeSubtitle, applySubtitleTrack])
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current
@@ -238,27 +263,6 @@ export default function Player() {
       console.error('PiP failed:', err)
     }
   }, [])
-
-  const takeScreenshot = useCallback(() => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas) return
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    ctx.drawImage(video, 0, 0)
-    canvas.toBlob((blob) => {
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `screenshot_${Math.floor(currentTime)}.png`
-      a.click()
-      URL.revokeObjectURL(url)
-      showNotification('Screenshot saved')
-    }, 'image/png')
-  }, [currentTime, showNotification])
 
   const updateAmbientColor = useCallback(() => {
     const video = videoRef.current
@@ -406,30 +410,49 @@ export default function Player() {
           }
         }
         break
-      case 's':
-        e.preventDefault()
-        takeScreenshot()
-        break
       case 'Escape':
-        if (showSubtitleSettings) {
-          setShowSubtitleSettings(false)
+        if (showSubtitleMenu) {
+          setShowSubtitleMenu(false)
           e.stopPropagation()
         }
         break
     }
-  }, [togglePlay, skip, toggleFullscreen, toggleMute, togglePiP, subtitleTracks, activeSubtitle, showNotification, takeScreenshot, showSubtitleSettings])
+  }, [togglePlay, skip, toggleFullscreen, toggleMute, togglePiP, subtitleTracks, activeSubtitle, showNotification, showSubtitleMenu])
 
   const handleVolumeChange = useCallback((e: React.MouseEvent) => {
     const slider = e.currentTarget
     const rect = slider.getBoundingClientRect()
-    const pos = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
-    const volumeFromBottom = 1 - pos
+    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     if (videoRef.current) {
-      videoRef.current.volume = volumeFromBottom
+      videoRef.current.volume = pos
       videoRef.current.muted = false
     }
-    setVolume(volumeFromBottom)
+    setVolume(pos)
     setIsMuted(false)
+  }, [])
+
+  const handleVolumeDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const updateVol = (ev: MouseEvent) => {
+      const el = volumeSliderRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const pos = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
+      if (videoRef.current) {
+        videoRef.current.volume = pos
+        videoRef.current.muted = false
+      }
+      setVolume(pos)
+      setIsMuted(false)
+    }
+    updateVol(e.nativeEvent)
+    const onMove = (ev: MouseEvent) => updateVol(ev)
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
   }, [])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -645,33 +668,9 @@ export default function Player() {
 
   useEffect(() => {
     if (subtitlePrefs) {
-      applySubtitleStyles(subtitlePrefs)
+      setLocalPrefs(subtitlePrefs)
     }
   }, [subtitlePrefs])
-
-  const applySubtitleStyles = (prefs: any) => {
-    const style = document.createElement('style')
-    style.id = 'vn-subtitle-style'
-    const existing = document.getElementById('vn-subtitle-style')
-    if (existing) existing.remove()
-
-    let css = `video::cue {`
-    css += `font-size: ${prefs.font_size}px;`
-    css += `color: ${prefs.color};`
-    css += `background: ${prefs.background_color};`
-    css += `background-opacity: ${prefs.background_opacity};`
-    if (prefs.outline) {
-      css += `-webkit-text-stroke: ${prefs.outline_width}px ${prefs.outline_color};`
-    }
-    if (prefs.shadow) {
-      css += `text-shadow: ${prefs.shadow_offset}px ${prefs.shadow_offset}px ${prefs.shadow_color};`
-    }
-    css += `bottom: ${prefs.position}px;`
-    css += `}`
-
-    style.textContent = css
-    document.head.appendChild(style)
-  }
 
   const screenHeight = () => window.innerHeight
 
@@ -717,7 +716,7 @@ export default function Player() {
       onWheel={handleWheel}
       style={{ cursor: showControls ? 'default' : 'none' }}
     >
-      <canvas ref={canvasRef} className="hidden" />
+
       <canvas ref={ambientCanvasRef} className="hidden" width={64} height={36} />
 
       {cinemaMode && (
@@ -763,6 +762,38 @@ export default function Player() {
             />
           ))}
         </video>
+
+        {activeCues.length > 0 && showSubtitles && (
+          <div
+            className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center gap-1"
+            style={{ bottom: `${localPrefs?.position ?? 60}px` }}
+          >
+            {activeCues.map((text, i) => (
+              <div
+                key={i}
+                className="px-3 py-1 rounded-md text-center max-w-[80%]"
+                style={{
+                  fontSize: `${localPrefs?.font_size || 24}px`,
+                  color: localPrefs?.color || '#FFFFFF',
+                  backgroundColor: (localPrefs?.background_opacity ?? 0.5) > 0
+                    ? `rgba(0, 0, 0, ${localPrefs?.background_opacity ?? 0.5})`
+                    : 'transparent',
+                  textShadow: localPrefs?.outline
+                    ? (() => {
+                        const w = localPrefs?.outline_width || 2
+                        const c = localPrefs?.outline_color || '#000000'
+                        return `-${w}px -${w}px 0 ${c}, ${w}px -${w}px 0 ${c}, -${w}px ${w}px 0 ${c}, ${w}px ${w}px 0 ${c}`
+                      })()
+                    : localPrefs?.shadow
+                      ? `${localPrefs?.shadow_offset || 2}px ${localPrefs?.shadow_offset || 2}px 2px ${localPrefs?.shadow_color || '#000000'}`
+                      : 'none',
+                  lineHeight: 1.4,
+                }}
+                dangerouslySetInnerHTML={{ __html: text }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <AnimatePresence>
@@ -939,201 +970,186 @@ export default function Player() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="absolute bottom-20 right-20 z-50"
+            className="absolute bottom-20 right-12 z-50"
           >
-            <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-3 min-w-[200px] shadow-2xl">
-              <p className="text-[10px] text-white/50 mb-2 uppercase tracking-wider">Subtitles</p>
-              <button
-                onClick={() => {
-                  setActiveSubtitle(null)
-                  setShowSubtitles(false)
-                  setShowSubtitleMenu(false)
-                  showNotification('Subtitles Off')
-                }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                  activeSubtitle === null ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
-                }`}
-              >
-                Off
-              </button>
-              {subtitleTracks.map((track: any) => (
+            <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-4 w-64 shadow-2xl max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-medium text-white/80">Subtitles</p>
                 <button
-                  key={track.index}
+                  onClick={() => setShowSubtitleMenu(false)}
+                  className="text-white/40 hover:text-white text-xs"
+                >
+                  Close
+                </button>
+              </div>
+
+              {/* Track Selection */}
+              <div className="space-y-1 mb-4">
+                <button
                   onClick={() => {
-                    setActiveSubtitle(track.index)
-                    setShowSubtitles(true)
-                    setShowSubtitleMenu(false)
-                    showNotification(`Subtitles: ${track.title || track.language || 'Track ' + track.index}`)
+                    setActiveSubtitle(null)
+                    setShowSubtitles(false)
+                    showNotification('Subtitles Off')
                   }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                    activeSubtitle === track.index ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
+                    activeSubtitle === null ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
                   }`}
                 >
-                  {track.title || track.language || `Track ${track.index}`}
+                  Off
                 </button>
-              ))}
-              <hr className="border-white/10 my-2" />
-              <button
-                onClick={() => { setShowSubtitleMenu(false); setShowSubtitleSettings(true) }}
-                className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10 text-white/80"
-              >
-                Subtitle Settings
-              </button>
+                {subtitleTracks.map((track: any) => (
+                  <button
+                    key={track.index}
+                    onClick={() => {
+                      setActiveSubtitle(track.index)
+                      setShowSubtitles(true)
+                      showNotification(`Subtitles: ${track.title || track.language || 'Track ' + track.index}`)
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                      activeSubtitle === track.index ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
+                    }`}
+                  >
+                    {track.title || track.language || `Track ${track.index}`}
+                  </button>
+                ))}
+                {subtitleTracks.length === 0 && (
+                  <p className="text-xs text-white/40 px-3 py-2">No subtitles found</p>
+                )}
+              </div>
+
+              <hr className="border-white/10 my-3" />
+
+              {/* Appearance Settings */}
+              <div className="space-y-4">
+                {/* Font Size */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Font Size</label>
+                    <span className="text-[10px] text-white/40">{localPrefs?.font_size || 24}px</span>
+                  </div>
+                  <input
+                    type="range" min="12" max="48" step="2"
+                    value={localPrefs?.font_size || 24}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value)
+                      const next = { ...localPrefs, font_size: val }
+                      setLocalPrefs(next)
+                      updateSubtitlePrefsMutation.mutate({ font_size: val })
+                    }}
+                    className="w-full accent-vn-accent h-1"
+                  />
+                </div>
+
+                {/* Background */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Background</label>
+                    <button
+                      onClick={() => {
+                        const val = (localPrefs?.background_opacity ?? 0.5) > 0 ? 0 : 0.5
+                        const next = { ...localPrefs, background_opacity: val }
+                        setLocalPrefs(next)
+
+                        updateSubtitlePrefsMutation.mutate({ background_opacity: val })
+                      }}
+                      className={`w-8 h-4 rounded-full transition-colors ${(localPrefs?.background_opacity ?? 0.5) > 0 ? 'bg-vn-accent' : 'bg-white/20'}`}
+                    >
+                      <div className={`w-3 h-3 bg-white rounded-full transition-transform ${(localPrefs?.background_opacity ?? 0.5) > 0 ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                  {(localPrefs?.background_opacity ?? 0.5) > 0 && (
+                    <input
+                      type="range" min="0.1" max="1" step="0.1"
+                      value={localPrefs?.background_opacity ?? 0.5}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        const next = { ...localPrefs, background_opacity: val }
+                        setLocalPrefs(next)
+
+                        updateSubtitlePrefsMutation.mutate({ background_opacity: val })
+                      }}
+                      className="w-full accent-vn-accent h-1"
+                    />
+                  )}
+                </div>
+
+                {/* Position from Bottom */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Position from Bottom</label>
+                    <span className="text-[10px] text-white/40">{localPrefs?.position ?? 60}px</span>
+                  </div>
+                  <input
+                    type="range" min="10" max="300" step="5"
+                    value={localPrefs?.position ?? 60}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value)
+                      const next = { ...localPrefs, position: val }
+                      setLocalPrefs(next)
+                      updateSubtitlePrefsMutation.mutate({ position: val })
+                    }}
+                    className="w-full accent-vn-accent h-1"
+                  />
+                </div>
+
+                {/* Outline */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Outline</label>
+                    <button
+                      onClick={() => {
+                        const val = !localPrefs?.outline
+                        const next = { ...localPrefs, outline: val }
+                        setLocalPrefs(next)
+
+                        updateSubtitlePrefsMutation.mutate({ outline: val })
+                      }}
+                      className={`w-8 h-4 rounded-full transition-colors ${localPrefs?.outline ? 'bg-vn-accent' : 'bg-white/20'}`}
+                    >
+                      <div className={`w-3 h-3 bg-white rounded-full transition-transform ${localPrefs?.outline ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                  {localPrefs?.outline && (
+                    <input
+                      type="range" min="1" max="4" step="1"
+                      value={localPrefs?.outline_width || 2}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value)
+                        const next = { ...localPrefs, outline_width: val }
+                        setLocalPrefs(next)
+
+                        updateSubtitlePrefsMutation.mutate({ outline_width: val })
+                      }}
+                      className="w-full accent-vn-accent h-1"
+                    />
+                  )}
+                </div>
+
+                {/* Shadow */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Shadow</label>
+                    <button
+                      onClick={() => {
+                        const val = !localPrefs?.shadow
+                        const next = { ...localPrefs, shadow: val }
+                        setLocalPrefs(next)
+
+                        updateSubtitlePrefsMutation.mutate({ shadow: val })
+                      }}
+                      className={`w-8 h-4 rounded-full transition-colors ${localPrefs?.shadow ? 'bg-vn-accent' : 'bg-white/20'}`}
+                    >
+                      <div className={`w-3 h-3 bg-white rounded-full transition-transform ${localPrefs?.shadow ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {showSubtitleSettings && (
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-50"
-          >
-            <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-4 w-72 shadow-2xl max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-medium">Subtitle Settings</p>
-                <button onClick={() => setShowSubtitleSettings(false)} className="text-white/50 hover:text-white text-xs">Close</button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Font Size</label>
-                  <input
-                    type="range" min="12" max="48" step="2"
-                    value={subtitlePrefs?.font_size || 24}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value)
-                      updateSubtitlePrefsMutation.mutate({ font_size: val })
-                      applySubtitleStyles({ ...subtitlePrefs, font_size: val })
-                    }}
-                    className="w-full mt-1 accent-vn-accent"
-                  />
-                  <span className="text-xs text-white/60">{subtitlePrefs?.font_size || 24}px</span>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Color</label>
-                  <div className="flex gap-2 mt-1">
-                    {['#FFFFFF', '#FFFF00', '#00FF00', '#00FFFF', '#FF00FF', '#FF6600'].map(color => (
-                      <button
-                        key={color}
-                        onClick={() => {
-                          updateSubtitlePrefsMutation.mutate({ color })
-                          applySubtitleStyles({ ...subtitlePrefs, color })
-                        }}
-                        className={`w-6 h-6 rounded-full border-2 ${subtitlePrefs?.color === color ? 'border-vn-accent' : 'border-transparent'}`}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Background</label>
-                  <input
-                    type="range" min="0" max="1" step="0.1"
-                    value={subtitlePrefs?.background_opacity ?? 0.5}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value)
-                      updateSubtitlePrefsMutation.mutate({ background_opacity: val })
-                      applySubtitleStyles({ ...subtitlePrefs, background_opacity: val })
-                    }}
-                    className="w-full mt-1 accent-vn-accent"
-                  />
-                  <span className="text-xs text-white/60">{Math.round((subtitlePrefs?.background_opacity ?? 0.5) * 100)}%</span>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Outline</label>
-                  <div className="flex items-center gap-3 mt-1">
-                    <button
-                      onClick={() => {
-                        const val = !subtitlePrefs?.outline
-                        updateSubtitlePrefsMutation.mutate({ outline: val })
-                        applySubtitleStyles({ ...subtitlePrefs, outline: val })
-                      }}
-                      className={`w-10 h-5 rounded-full transition-colors ${subtitlePrefs?.outline ? 'bg-vn-accent' : 'bg-white/20'}`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${subtitlePrefs?.outline ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                    </button>
-                    {subtitlePrefs?.outline && (
-                      <input
-                        type="range" min="1" max="4" step="1"
-                        value={subtitlePrefs?.outline_width || 2}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value)
-                          updateSubtitlePrefsMutation.mutate({ outline_width: val })
-                          applySubtitleStyles({ ...subtitlePrefs, outline_width: val })
-                        }}
-                        className="flex-1 accent-vn-accent"
-                      />
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Shadow</label>
-                  <div className="flex items-center gap-3 mt-1">
-                    <button
-                      onClick={() => {
-                        const val = !subtitlePrefs?.shadow
-                        updateSubtitlePrefsMutation.mutate({ shadow: val })
-                        applySubtitleStyles({ ...subtitlePrefs, shadow: val })
-                      }}
-                      className={`w-10 h-5 rounded-full transition-colors ${subtitlePrefs?.shadow ? 'bg-vn-accent' : 'bg-white/20'}`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform ${subtitlePrefs?.shadow ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                    </button>
-                    {subtitlePrefs?.shadow && (
-                      <input
-                        type="range" min="1" max="6" step="1"
-                        value={subtitlePrefs?.shadow_offset || 2}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value)
-                          updateSubtitlePrefsMutation.mutate({ shadow_offset: val })
-                          applySubtitleStyles({ ...subtitlePrefs, shadow_offset: val })
-                        }}
-                        className="flex-1 accent-vn-accent"
-                      />
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Position</label>
-                  <input
-                    type="range" min="10" max="200" step="5"
-                    value={subtitlePrefs?.position ?? 100}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value)
-                      updateSubtitlePrefsMutation.mutate({ position: val })
-                      applySubtitleStyles({ ...subtitlePrefs, position: val })
-                    }}
-                    className="w-full mt-1 accent-vn-accent"
-                  />
-                  <span className="text-xs text-white/60">{subtitlePrefs?.position ?? 100}px from bottom</span>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-white/50 uppercase tracking-wider">Delay</label>
-                  <input
-                    type="range" min="-2" max="2" step="0.1"
-                    value={subtitlePrefs?.delay ?? 0}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value)
-                      updateSubtitlePrefsMutation.mutate({ delay: val })
-                    }}
-                    className="w-full mt-1 accent-vn-accent"
-                  />
-                  <span className="text-xs text-white/60">{(subtitlePrefs?.delay ?? 0).toFixed(1)}s</span>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -1329,44 +1345,21 @@ export default function Player() {
                             exit={{ opacity: 0, y: 10 }}
                             className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-auto"
                           >
-                            <div className="bg-black/90 backdrop-blur-xl rounded-xl p-2.5 flex flex-col items-center">
-                              <span className="text-[10px] text-white/50 mb-1.5">{Math.round(volume * 100)}%</span>
+                            <div className="bg-black/90 backdrop-blur-xl rounded-xl p-3 flex flex-col items-center gap-2">
+                              <span className="text-xs text-white/60 font-mono">{Math.round(volume * 100)}%</span>
                               <div
-                                ref={(el) => {
-                                  if (!el) return
-                                  const handleMouseDown = (e: React.MouseEvent) => {
-                                    e.preventDefault()
-                                    const updateVol = (ev: MouseEvent) => {
-                                      const rect = el.getBoundingClientRect()
-                                      const pos = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width))
-                                      if (videoRef.current) {
-                                        videoRef.current.volume = pos
-                                        videoRef.current.muted = false
-                                      }
-                                      setVolume(pos)
-                                      setIsMuted(false)
-                                    }
-                                    updateVol(e.nativeEvent)
-                                    const onMove = (ev: MouseEvent) => updateVol(ev)
-                                    const onUp = () => {
-                                      document.removeEventListener('mousemove', onMove)
-                                      document.removeEventListener('mouseup', onUp)
-                                    }
-                                    document.addEventListener('mousemove', onMove)
-                                    document.addEventListener('mouseup', onUp)
-                                  }
-                                  el.onmousedown = handleMouseDown as any
-                                }}
-                                className="relative w-32 h-2 bg-white/20 rounded-full cursor-pointer"
+                                ref={volumeSliderRef}
+                                onMouseDown={handleVolumeDragStart}
+                                onClick={handleVolumeChange}
+                                className="relative w-28 h-1.5 bg-white/20 rounded-full cursor-pointer"
                               >
                                 <div
-                                  className="absolute top-0 left-0 h-full bg-vn-accent rounded-full"
+                                  className="absolute top-0 left-0 h-full bg-vn-accent rounded-full pointer-events-none"
                                   style={{ width: `${volume * 100}%` }}
                                 />
                                 <div
-                                  className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-lg
-                                             transition-transform hover:scale-125 pointer-events-none"
-                                  style={{ left: `calc(${volume * 100}% - 7px)` }}
+                                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none"
+                                  style={{ left: `calc(${volume * 100}% - 6px)` }}
                                 />
                               </div>
                             </div>
@@ -1390,42 +1383,17 @@ export default function Player() {
                   </div>
 
                   <div className="flex items-center gap-1 sm:gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={takeScreenshot}
-                      className="p-2 rounded-xl hover:bg-white/10 transition-all hidden sm:flex"
-                      aria-label="Take screenshot"
-                    >
-                      <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </motion.button>
-
                     <div className="relative">
                       <motion.button
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.9 }}
                         onClick={() => {
-                          if (subtitleTracks.length === 0) return
-                          if (subtitleTracks.length === 1) {
-                            if (activeSubtitle !== null) {
-                              setActiveSubtitle(null)
-                              setShowSubtitles(false)
-                              showNotification('Subtitles Off')
-                            } else {
-                              setActiveSubtitle(subtitleTracks[0].index)
-                              setShowSubtitles(true)
-                              showNotification(`Subtitles: ${subtitleTracks[0].title || subtitleTracks[0].language || 'Track ' + subtitleTracks[0].index}`)
-                            }
-                          } else {
-                            setShowSubtitleMenu(s => !s)
-                          }
+                          setShowSubtitleMenu(s => !s)
                         }}
-                        className={`p-2 rounded-xl transition-all ${
-                          activeSubtitle !== null ? 'bg-vn-accent' : 'hover:bg-white/10'
-                        } ${subtitleTracks.length === 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
-                        aria-label="Toggle subtitles"
+                        className={`p-2 rounded-xl transition-all ${showSubtitleMenu ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
+                        aria-label="Subtitle settings"
                       >
-                        <Subtitles className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <SettingsIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                       </motion.button>
                     </div>
 
