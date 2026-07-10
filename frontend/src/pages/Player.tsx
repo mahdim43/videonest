@@ -7,7 +7,6 @@ import { Heart, AlertCircle, ChevronLeft } from 'lucide-react'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import {
-  MobileControls,
   DesktopControls,
   SubtitleOverlay,
   SubtitleMenu,
@@ -27,6 +26,10 @@ export default function Player() {
   const progressRef = useRef<HTMLDivElement>(null)
   const ambientCanvasRef = useRef<HTMLCanvasElement>(null)
   const isMobile = useIsMobile()
+  const [isPortrait, setIsPortrait] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth < window.innerHeight
+  })
 
   const [playerState, setPlayerState] = useState<PlayerState>('loading')
   const [isMuted, setIsMuted] = useState(false)
@@ -378,6 +381,29 @@ export default function Player() {
     }
   }, [isDragging, dragTime, seek])
 
+  const progressTouchDragging = useRef(false)
+
+  const handleProgressTouchStart = useCallback((e: React.TouchEvent) => {
+    progressTouchDragging.current = true
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    if (!rect) return
+    const pos = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width))
+    seek(pos * duration)
+  }, [duration, seek])
+
+  const handleProgressTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!progressTouchDragging.current) return
+    e.preventDefault()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    if (!rect) return
+    const pos = Math.max(0, Math.min(1, (e.touches[0].clientX - rect.left) / rect.width))
+    seek(pos * duration)
+  }, [duration, seek])
+
+  const handleProgressTouchEnd = useCallback(() => {
+    progressTouchDragging.current = false
+  }, [])
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     switch (e.key) {
       case ' ':
@@ -636,6 +662,17 @@ export default function Player() {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [handleKeyDown])
+
+  useEffect(() => {
+    const checkPortrait = () => setIsPortrait(window.innerHeight > window.innerWidth)
+    checkPortrait()
+    window.addEventListener('resize', checkPortrait)
+    window.addEventListener('orientationchange', checkPortrait)
+    return () => {
+      window.removeEventListener('resize', checkPortrait)
+      window.removeEventListener('orientationchange', checkPortrait)
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -1009,216 +1046,59 @@ export default function Player() {
       {/* ALL CONTROLS are in one z-50 layer ABOVE the touch overlay */}
       {showControls && playerState !== 'loading' && playerState !== 'error' && (
         <div className="absolute inset-0 z-50 vn-player-controls pointer-events-none">
-          {/* Mobile header */}
-          {isMobile && (
-            <div className="absolute top-0 left-0 right-0 p-4 pointer-events-auto">
-              <div className="bg-gradient-to-b from-black/90 to-transparent rounded-b-2xl p-4">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); navigate(-1) }}
-                    className="p-3 rounded-2xl bg-white/10 backdrop-blur-md active:bg-white/20 
-                               transition-all duration-300 active:scale-95"
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
+          {/* Bottom controls - always DesktopControls */}
+          <DesktopControls
+            playerState={playerState}
+            currentTime={currentTime}
+            duration={duration}
+            buffered={buffered}
+            volume={volume}
+            isMuted={isMuted}
+            isFullscreen={isFullscreen}
+            playbackSpeed={playbackSpeed}
+            showSubtitleMenu={showSubtitleMenu}
+            showSettings={showSettings}
+            showVolumeSlider={showVolumeSlider}
+            showHoverTime={showHoverTime}
+            hoverTime={hoverTime}
+            isDragging={isDragging}
+            dragTime={dragTime}
+            autoplay={autoplay}
+            cinemaMode={cinemaMode}
+            hasPrev={!!neighbors?.prev}
+            hasNext={!!neighbors?.next}
+            videoFilename={video.filename}
+            isPortrait={isPortrait && !isFullscreen}
+            onTogglePlay={togglePlay}
+            onToggleMute={toggleMute}
+            onToggleFullscreen={toggleFullscreen}
+            onTogglePiP={togglePiP}
+            onToggleAutoplay={() => setAutoplay(a => !a)}
+            onToggleCinemaMode={() => setCinemaMode(c => !c)}
+            onSkipBack={() => skip(-10)}
+            onSkipForward={() => skip(10)}
+            onPrevEpisode={() => neighbors?.prev && navigate(`/watch/${neighbors.prev.id}`)}
+            onNextEpisode={() => neighbors?.next && navigate(`/watch/${neighbors.next.id}`)}
+            onShowSubtitleMenu={() => setShowSubtitleMenu(s => !s)}
+            onShowSettings={() => setShowSettings(s => !s)}
+            onProgressClick={handleProgressClick}
+            onProgressHover={handleProgressHover}
+            onProgressLeave={() => setShowHoverTime(false)}
+            onProgressDragStart={handleProgressDragStart}
+            onProgressDrag={handleProgressDrag}
+            onProgressDragEnd={handleProgressDragEnd}
+            onProgressTouchStart={handleProgressTouchStart}
+            onProgressTouchMove={handleProgressTouchMove}
+            onProgressTouchEnd={handleProgressTouchEnd}
+            onVolumeChange={handleVolumeChange}
+            onVolumeDragStart={handleVolumeDragStart}
+            onMouseMove={handleMouseMove}
+            formatTime={formatTime}
+          />
 
-                  <h2 className="text-sm font-heading font-semibold truncate max-w-[60%] px-4">
-                    {video.filename.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
-                  </h2>
-
-                  <motion.button
-                    whileTap={{ scale: 0.9 }}
-                    onClick={(e) => { e.stopPropagation(); toggleFavoriteMutation.mutate() }}
-                    className="p-3 rounded-2xl bg-white/10 backdrop-blur-md transition-all"
-                  >
-                    <Heart className={`w-5 h-5 ${isFavorite ? 'fill-vn-accent text-vn-accent' : ''}`} />
-                  </motion.button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Desktop header */}
-          {!isMobile && (
-            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-auto" />
-          )}
-
-          {/* Center play controls - desktop only */}
-          {!isMobile && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="flex items-center gap-6 pointer-events-auto">
-                {neighbors?.prev && (
-                  <motion.button
-                    whileHover={{ scale: 1.08 }}
-                    whileTap={{ scale: 0.92 }}
-                    onClick={(e) => { e.stopPropagation(); navigate(`/watch/${neighbors.prev.id}`) }}
-                    className="p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
-                    aria-label="Previous episode"
-                  >
-                    <ChevronLeft className="w-7 h-7" />
-                  </motion.button>
-                )}
-
-                <motion.button
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.92 }}
-                  onClick={(e) => { e.stopPropagation(); skip(-10) }}
-                  className="p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
-                  aria-label="Skip back 10 seconds"
-                >
-                  <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12.5 8V4l-4.5 4.5 4.5 4.5V8c4.14 0 7.5 3.36 7.5 7.5S16.64 23 12.5 23 5 19.64 5 15.5" />
-                  </svg>
-                </motion.button>
-
-                <motion.button
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.92 }}
-                  onClick={(e) => { e.stopPropagation(); togglePlay() }}
-                  className="p-6 rounded-full bg-vn-accent hover:bg-vn-hover transition-all shadow-[0_0_30px_rgba(217,4,41,0.4)]"
-                  aria-label={playerState === 'playing' ? 'Pause' : 'Play'}
-                >
-                  {playerState === 'playing' ? (
-                    <svg className="w-10 h-10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-                  ) : (
-                    <svg className="w-10 h-10 ml-1" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                  )}
-                </motion.button>
-
-                <motion.button
-                  whileHover={{ scale: 1.08 }}
-                  whileTap={{ scale: 0.92 }}
-                  onClick={(e) => { e.stopPropagation(); skip(10) }}
-                  className="p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
-                  aria-label="Skip forward 10 seconds"
-                >
-                  <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M11.5 8V4l4.5 4.5-4.5 4.5V8c-4.14 0-7.5 3.36-7.5 7.5S7.36 23 11.5 23 19 19.64 19 15.5" />
-                  </svg>
-                </motion.button>
-
-                {neighbors?.next && (
-                  <motion.button
-                    whileHover={{ scale: 1.08 }}
-                    whileTap={{ scale: 0.92 }}
-                    onClick={(e) => { e.stopPropagation(); navigate(`/watch/${neighbors.next.id}`) }}
-                    className="p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
-                    aria-label="Next episode"
-                  >
-                    <ChevronLeft className="w-7 h-7 rotate-180" />
-                  </motion.button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Bottom controls */}
-          {isMobile ? (
-            <MobileControls
-              playerState={playerState}
-              currentTime={currentTime}
-              duration={duration}
-              buffered={buffered}
-              volume={volume}
-              isMuted={isMuted}
-              isFullscreen={isFullscreen}
-              playbackSpeed={playbackSpeed}
-              showSubtitleMenu={showSubtitleMenu}
-              showSettings={showSettings}
-              hasPrev={!!neighbors?.prev}
-              hasNext={!!neighbors?.next}
-              onTogglePlay={togglePlay}
-              onToggleMute={toggleMute}
-              onToggleFullscreen={toggleFullscreen}
-              onSkipBack={() => skip(-10)}
-              onSkipForward={() => skip(10)}
-              onPrevEpisode={() => neighbors?.prev && navigate(`/watch/${neighbors.prev.id}`)}
-              onNextEpisode={() => neighbors?.next && navigate(`/watch/${neighbors.next.id}`)}
-              onShowSubtitleMenu={() => setShowSubtitleMenu(s => !s)}
-              onShowSettings={() => setShowSettings(s => !s)}
-              onSeek={seek}
-              formatTime={formatTime}
-            />
-          ) : (
-            <DesktopControls
-              playerState={playerState}
-              currentTime={currentTime}
-              duration={duration}
-              buffered={buffered}
-              volume={volume}
-              isMuted={isMuted}
-              isFullscreen={isFullscreen}
-              playbackSpeed={playbackSpeed}
-              showSubtitleMenu={showSubtitleMenu}
-              showSettings={showSettings}
-              showVolumeSlider={showVolumeSlider}
-              showHoverTime={showHoverTime}
-              hoverTime={hoverTime}
-              isDragging={isDragging}
-              dragTime={dragTime}
-              autoplay={autoplay}
-              cinemaMode={cinemaMode}
-              hasPrev={!!neighbors?.prev}
-              hasNext={!!neighbors?.next}
-              videoFilename={video.filename}
-              onTogglePlay={togglePlay}
-              onToggleMute={toggleMute}
-              onToggleFullscreen={toggleFullscreen}
-              onTogglePiP={togglePiP}
-              onToggleAutoplay={() => setAutoplay(a => !a)}
-              onToggleCinemaMode={() => setCinemaMode(c => !c)}
-              onSkipBack={() => skip(-10)}
-              onSkipForward={() => skip(10)}
-              onPrevEpisode={() => neighbors?.prev && navigate(`/watch/${neighbors.prev.id}`)}
-              onNextEpisode={() => neighbors?.next && navigate(`/watch/${neighbors.next.id}`)}
-              onShowSubtitleMenu={() => setShowSubtitleMenu(s => !s)}
-              onShowSettings={() => setShowSettings(s => !s)}
-              onProgressClick={handleProgressClick}
-              onProgressHover={handleProgressHover}
-              onProgressLeave={() => setShowHoverTime(false)}
-              onProgressDragStart={handleProgressDragStart}
-              onProgressDrag={handleProgressDrag}
-              onProgressDragEnd={handleProgressDragEnd}
-              onVolumeChange={handleVolumeChange}
-              onVolumeDragStart={handleVolumeDragStart}
-              onMouseMove={handleMouseMove}
-              formatTime={formatTime}
-            />
-          )}
-
-          {/* Mobile speed selector */}
-          {isMobile && showSettings && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="absolute bottom-36 left-4 right-4 pointer-events-auto"
-            >
-              <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-4">
-                <p className="text-xs text-white/50 mb-3 uppercase tracking-wider">Playback Speed</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => (
-                    <motion.button
-                      key={speed}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={(e) => { e.stopPropagation(); changeSpeed(speed) }}
-                      className={`px-3 py-2.5 rounded-xl text-sm transition-all ${
-                        playbackSpeed === speed
-                          ? 'bg-vn-accent text-white'
-                          : 'bg-white/10 hover:bg-white/20'
-                      }`}
-                    >
-                      {speed}x
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Desktop speed menu */}
-          {!isMobile && showSettings && (
-            <div className="absolute bottom-20 right-12 z-50 pointer-events-auto">
+          {/* Speed menu - shown on all devices when settings toggled */}
+          {showSettings && (
+            <div className={`absolute pointer-events-auto ${isPortrait && !isFullscreen ? 'bottom-28 left-4 right-4' : 'bottom-20 right-12 z-50'}`}>
               <SpeedMenu
                 show={showSettings}
                 playbackSpeed={playbackSpeed}

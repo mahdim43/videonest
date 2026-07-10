@@ -27,6 +27,7 @@ interface DesktopControlsProps {
   hasPrev: boolean
   hasNext: boolean
   videoFilename: string
+  isPortrait: boolean
   onTogglePlay: () => void
   onToggleMute: () => void
   onToggleFullscreen: () => void
@@ -45,6 +46,9 @@ interface DesktopControlsProps {
   onProgressDragStart: (e: React.MouseEvent) => void
   onProgressDrag: (e: React.MouseEvent) => void
   onProgressDragEnd: () => void
+  onProgressTouchStart: (e: React.TouchEvent) => void
+  onProgressTouchMove: (e: React.TouchEvent) => void
+  onProgressTouchEnd: () => void
   onVolumeChange: (e: React.MouseEvent) => void
   onVolumeDragStart: (e: React.MouseEvent) => void
   onMouseMove: () => void
@@ -72,6 +76,7 @@ export default function DesktopControls({
   hasPrev,
   hasNext,
   videoFilename,
+  isPortrait,
   onTogglePlay,
   onToggleMute,
   onToggleFullscreen,
@@ -90,6 +95,9 @@ export default function DesktopControls({
   onProgressDragStart,
   onProgressDrag,
   onProgressDragEnd,
+  onProgressTouchStart,
+  onProgressTouchMove,
+  onProgressTouchEnd,
   onVolumeChange,
   onVolumeDragStart,
   onMouseMove,
@@ -98,8 +106,10 @@ export default function DesktopControls({
   const progressRef = useRef<HTMLDivElement>(null)
   const volumeSliderRef = useRef<HTMLDivElement>(null)
 
-  const progressPercent = (currentTime / duration) * 100
-  const bufferedPercent = (buffered / duration) * 100
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0
+  const bufferedPercent = duration > 0 ? (buffered / duration) * 100 : 0
+
+  const p = isPortrait
 
   return (
     <motion.div
@@ -111,41 +121,41 @@ export default function DesktopControls({
       onMouseMove={onMouseMove}
     >
       {/* Top gradient */}
-      <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-auto" />
+      <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-auto ${p ? 'h-20' : 'h-32'}`} />
 
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 p-4 sm:p-6 pointer-events-auto">
+      <div className={`absolute top-0 left-0 right-0 pointer-events-auto ${p ? 'p-2' : 'p-4 sm:p-6'}`}>
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <button
             onClick={() => window.history.back()}
-            className="p-3 rounded-2xl bg-white/10 backdrop-blur-md hover:bg-white/20 
-                       transition-all duration-300 hover:scale-105 active:scale-95"
+            className={`rounded-2xl bg-white/10 backdrop-blur-md hover:bg-white/20 
+                       transition-all duration-300 hover:scale-105 active:scale-95 ${p ? 'p-2' : 'p-3'}`}
             aria-label="Go back"
           >
-            <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+            <ChevronLeft className={p ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} />
           </button>
 
-          <h2 className="text-sm sm:text-lg font-heading font-semibold truncate max-w-xs sm:max-w-2xl px-4">
+          <h2 className={`font-heading font-semibold truncate px-4 ${p ? 'text-xs max-w-[55%]' : 'text-sm sm:text-lg max-w-xs sm:max-w-2xl'}`}>
             {videoFilename.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
           </h2>
 
-          <div className="w-12" />
+          <div className={p ? 'w-8' : 'w-12'} />
         </div>
       </div>
 
       {/* Center play controls */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="flex items-center gap-3 sm:gap-6 pointer-events-auto">
+        <div className={`flex items-center pointer-events-auto ${p ? 'gap-2' : 'gap-3 sm:gap-6'}`}>
           {hasPrev && (
             <motion.button
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
               onClick={onPrevEpisode}
-              className="p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                         transition-all duration-200"
+              className={`rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
+                         transition-all duration-200 ${p ? 'p-2' : 'p-3'}`}
               aria-label="Previous episode"
             >
-              <ChevronLeft className="w-6 h-6 sm:w-7 sm:h-7" />
+              <ChevronLeft className={p ? 'w-5 h-5' : 'w-6 h-6 sm:w-7 sm:h-7'} />
             </motion.button>
           )}
 
@@ -153,25 +163,25 @@ export default function DesktopControls({
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.92 }}
             onClick={onSkipBack}
-            className="p-3 sm:p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                       transition-all duration-200 hidden sm:flex"
+            className={`rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
+                       transition-all duration-200 ${p ? 'p-2 hidden' : 'p-3 sm:p-4 hidden sm:flex'}`}
             aria-label="Skip back 10 seconds"
           >
-            <SkipBack className="w-6 h-6 sm:w-8 sm:h-8" />
+            <SkipBack className={p ? 'w-5 h-5' : 'w-6 h-6 sm:w-8 sm:h-8'} />
           </motion.button>
 
           <motion.button
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.92 }}
             onClick={onTogglePlay}
-            className="p-5 sm:p-6 rounded-full bg-vn-accent hover:bg-vn-hover 
-                       transition-all duration-200 shadow-[0_0_30px_rgba(217,4,41,0.4)]"
+            className={`rounded-full bg-vn-accent hover:bg-vn-hover 
+                       transition-all duration-200 shadow-[0_0_30px_rgba(217,4,41,0.4)] ${p ? 'p-4' : 'p-5 sm:p-6'}`}
             aria-label={playerState === 'playing' ? 'Pause' : 'Play'}
           >
             {playerState === 'playing' ? (
-              <Pause className="w-8 h-8 sm:w-10 sm:h-10" />
+              <Pause className={p ? 'w-6 h-6' : 'w-8 h-8 sm:w-10 sm:h-10'} />
             ) : (
-              <Play className="w-8 h-8 sm:w-10 sm:h-10 ml-1" />
+              <Play className={`${p ? 'w-6 h-6' : 'w-8 h-8 sm:w-10 sm:h-10'} ml-0.5`} />
             )}
           </motion.button>
 
@@ -179,11 +189,11 @@ export default function DesktopControls({
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.92 }}
             onClick={onSkipForward}
-            className="p-3 sm:p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                       transition-all duration-200 hidden sm:flex"
+            className={`rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
+                       transition-all duration-200 ${p ? 'p-2 hidden' : 'p-3 sm:p-4 hidden sm:flex'}`}
             aria-label="Skip forward 10 seconds"
           >
-            <SkipForward className="w-6 h-6 sm:w-8 sm:h-8" />
+            <SkipForward className={p ? 'w-5 h-5' : 'w-6 h-6 sm:w-8 sm:h-8'} />
           </motion.button>
 
           {hasNext && (
@@ -191,32 +201,35 @@ export default function DesktopControls({
               whileHover={{ scale: 1.08 }}
               whileTap={{ scale: 0.92 }}
               onClick={onNextEpisode}
-              className="p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                         transition-all duration-200"
+              className={`rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
+                         transition-all duration-200 ${p ? 'p-2' : 'p-3'}`}
               aria-label="Next episode"
             >
-              <ChevronRight className="w-6 h-6 sm:w-7 sm:h-7" />
+              <ChevronRight className={p ? 'w-5 h-5' : 'w-6 h-6 sm:w-7 sm:h-7'} />
             </motion.button>
           )}
         </div>
       </div>
 
       {/* Bottom gradient */}
-      <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-auto" />
+      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-auto ${p ? 'h-28' : 'h-40'}`} />
 
       {/* Bottom controls */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 pointer-events-auto">
-        <div className="max-w-6xl mx-auto space-y-3">
+      <div className={`absolute bottom-0 left-0 right-0 pointer-events-auto ${p ? 'p-2' : 'p-4 sm:p-6'}`}>
+        <div className="max-w-6xl mx-auto space-y-2 sm:space-y-3">
           {/* Progress bar */}
           <div
             ref={progressRef}
-            className="relative h-1.5 sm:h-2 bg-white/20 rounded-full cursor-pointer group"
+            className={`relative bg-white/20 rounded-full cursor-pointer group ${p ? 'h-3' : 'h-1.5 sm:h-2'}`}
             onClick={onProgressClick}
             onMouseMove={onProgressHover}
             onMouseLeave={onProgressLeave}
             onMouseDown={onProgressDragStart}
             onMouseMoveCapture={onProgressDrag}
             onMouseUp={onProgressDragEnd}
+            onTouchStart={onProgressTouchStart}
+            onTouchMove={onProgressTouchMove}
+            onTouchEnd={onProgressTouchEnd}
           >
             <div
               className="absolute h-full bg-white/30 rounded-full"
@@ -229,15 +242,15 @@ export default function DesktopControls({
               transition={{ duration: 0.1 }}
             />
             <motion.div
-              className="absolute w-4 h-4 bg-vn-accent rounded-full -translate-y-1/2 top-1/2 
+              className={`absolute bg-vn-accent rounded-full -translate-y-1/2 top-1/2 
                          opacity-0 group-hover:opacity-100 transition-opacity duration-200
-                         shadow-[0_0_10px_rgba(217,4,41,0.8)]"
+                         shadow-[0_0_10px_rgba(217,4,41,0.8)] ${p ? 'w-5 h-5' : 'w-4 h-4'}`}
               style={{ 
-                left: `calc(${isDragging ? (dragTime / duration) * 100 : progressPercent}% - 8px)` 
+                left: `calc(${isDragging ? (dragTime / duration) * 100 : progressPercent}% - ${p ? '10px' : '8px'})` 
               }}
             />
             <AnimatePresence>
-              {showHoverTime && (
+              {showHoverTime && !p && (
                 <motion.div
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -254,22 +267,22 @@ export default function DesktopControls({
 
           {/* Control buttons */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className={`flex items-center ${p ? 'gap-1' : 'gap-2 sm:gap-3'}`}>
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={onTogglePlay}
-                className="p-2 rounded-xl hover:bg-white/10 transition-all"
+                className={`rounded-xl hover:bg-white/10 transition-all ${p ? 'p-1.5' : 'p-2'}`}
                 aria-label={playerState === 'playing' ? 'Pause' : 'Play'}
               >
                 {playerState === 'playing' ? (
-                  <Pause className="w-5 h-5 sm:w-6 sm:h-6" />
+                  <Pause className={p ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} />
                 ) : (
-                  <Play className="w-5 h-5 sm:w-6 sm:h-6 ml-0.5" />
+                  <Play className={`${p ? 'w-4 h-4' : 'w-5 h-5 sm:w-6 sm:h-6'} ml-0.5`} />
                 )}
               </motion.button>
 
-              <span className="text-xs sm:text-sm font-mono text-white/80">
+              <span className={`font-mono text-white/80 ${p ? 'text-[10px]' : 'text-xs sm:text-sm'}`}>
                 {formatTime(isDragging ? dragTime : currentTime)} / {formatTime(duration)}
               </span>
 
@@ -311,28 +324,28 @@ export default function DesktopControls({
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={onToggleMute}
-                  className="p-2 rounded-xl hover:bg-white/10 transition-all pointer-events-auto"
+                  className={`rounded-xl hover:bg-white/10 transition-all pointer-events-auto ${p ? 'p-1.5' : 'p-2'}`}
                   aria-label={isMuted ? 'Unmute' : 'Mute'}
                 >
                   {isMuted || volume === 0 ? (
-                    <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <VolumeX className={p ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} />
                   ) : (
-                    <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <Volume2 className={p ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} />
                   )}
                 </motion.button>
               </div>
             </div>
 
-            <div className="flex items-center gap-1 sm:gap-2">
+            <div className={`flex items-center ${p ? 'gap-0.5' : 'gap-1 sm:gap-2'}`}>
               <div className="relative">
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={onShowSubtitleMenu}
-                  className={`p-2 rounded-xl transition-all ${showSubtitleMenu ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
+                  className={`rounded-xl transition-all ${showSubtitleMenu ? 'bg-vn-accent' : 'hover:bg-white/10'} ${p ? 'p-1.5' : 'p-2'}`}
                   aria-label="Subtitle settings"
                 >
-                  <SettingsIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <SettingsIcon className={p ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} />
                 </motion.button>
               </div>
 
@@ -341,7 +354,7 @@ export default function DesktopControls({
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
                   onClick={onShowSettings}
-                  className="p-2 rounded-xl hover:bg-white/10 transition-all text-xs sm:text-sm font-medium"
+                  className={`rounded-xl hover:bg-white/10 transition-all ${p ? 'p-1.5 text-[10px]' : 'p-2 text-xs sm:text-sm'} font-medium`}
                   aria-label="Playback speed"
                 >
                   {playbackSpeed}x
@@ -352,40 +365,48 @@ export default function DesktopControls({
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={onToggleAutoplay}
-                className={`p-2 rounded-xl transition-all ${autoplay ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
+                className={`rounded-xl transition-all ${autoplay ? 'bg-vn-accent' : 'hover:bg-white/10'} ${p ? 'p-1.5' : 'p-2'}`}
                 aria-label="Toggle autoplay"
               >
-                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                <ChevronRight className={p ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} />
               </motion.button>
 
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={onToggleCinemaMode}
-                className={`p-2 rounded-xl transition-all ${cinemaMode ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
-                aria-label="Toggle cinema mode"
-              >
-                {cinemaMode ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
-              </motion.button>
+              {!p && (
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={onToggleCinemaMode}
+                  className={`p-2 rounded-xl transition-all ${cinemaMode ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
+                  aria-label="Toggle cinema mode"
+                >
+                  {cinemaMode ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
+                </motion.button>
+              )}
 
-              <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={onTogglePiP}
-                className="p-2 rounded-xl hover:bg-white/10 transition-all hidden sm:flex"
-                aria-label="Picture in picture"
-              >
-                <PictureInPicture className="w-5 h-5" />
-              </motion.button>
+              {!p && (
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={onTogglePiP}
+                  className="p-2 rounded-xl hover:bg-white/10 transition-all hidden sm:flex"
+                  aria-label="Picture in picture"
+                >
+                  <PictureInPicture className="w-5 h-5" />
+                </motion.button>
+              )}
 
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={onToggleFullscreen}
-                className="p-2 rounded-xl hover:bg-white/10 transition-all"
+                className={`rounded-xl hover:bg-white/10 transition-all ${p ? 'p-1.5' : 'p-2'}`}
                 aria-label="Toggle fullscreen"
               >
-                {isFullscreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
+                {isFullscreen ? (
+                  <Minimize className={p ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} />
+                ) : (
+                  <Maximize className={p ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} />
+                )}
               </motion.button>
             </div>
           </div>

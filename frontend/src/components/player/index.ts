@@ -1,4 +1,3 @@
-export { default as MobileControls } from './MobileControls'
 export { default as DesktopControls } from './DesktopControls'
 export { default as SubtitleOverlay } from './SubtitleOverlay'
 export { default as SubtitleMenu } from './SubtitleMenu'
