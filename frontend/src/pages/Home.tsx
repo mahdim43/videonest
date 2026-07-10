@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { videosApi, historyApi, favoritesApi, foldersApi } from '../api/client'
 import { useProfileStore } from '../stores/profileStore'
 import { motion } from 'framer-motion'
-import { Play, Heart, Folder, Search, Settings, Clock, Film, Loader2, ArrowUpDown, ChevronDown, X } from 'lucide-react'
+import { Play, Heart, Folder, Search, Settings, Clock, Film, Loader2, ArrowUpDown, ChevronDown, X, Download } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import MobileNav from '../components/MobileNav'
 import { useIsMobile } from '../hooks/useIsMobile'
@@ -22,6 +22,37 @@ export default function Home() {
   const [showMobileSearch, setShowMobileSearch] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const isMobile = useIsMobile()
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
+  const [showInstallInstructions, setShowInstallInstructions] = useState(false)
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+    }
+    const installedHandler = () => setIsInstalled(true)
+    window.addEventListener('beforeinstallprompt', handler)
+    window.addEventListener('appinstalled', installedHandler)
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsInstalled(true)
+    }
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler)
+      window.removeEventListener('appinstalled', installedHandler)
+    }
+  }, [])
+
+  const handleInstall = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt()
+      const { outcome } = await deferredPrompt.userChoice
+      if (outcome === 'accepted') setIsInstalled(true)
+      setDeferredPrompt(null)
+    } else {
+      setShowInstallInstructions(true)
+    }
+  }
 
   useEffect(() => {
     if (!currentProfile && profileId) {
@@ -181,6 +212,16 @@ export default function Home() {
                              focus:ring-vn-accent transition-all"
                 />
               </div>
+            )}
+
+            {!isInstalled && (
+              <button
+                onClick={handleInstall}
+                className="p-2 rounded-xl hover:bg-vn-panel transition-colors text-vn-accent"
+                title="Install App"
+              >
+                <Download className="w-5 h-5" />
+              </button>
             )}
 
             <button
@@ -363,6 +404,39 @@ export default function Home() {
           </>
         )}
       </main>
+
+      {showInstallInstructions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowInstallInstructions(false)}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-vn-panel border border-vn-card rounded-2xl p-6 max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-heading font-semibold mb-3">Install VideoNest</h3>
+            <div className="space-y-3 text-sm text-vn-text-secondary">
+              <div className="flex items-start gap-3">
+                <span className="font-bold text-vn-accent">1.</span>
+                <p>Tap the <strong>Share</strong> button in your browser</p>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="font-bold text-vn-accent">2.</span>
+                <p>Select <strong>"Add to Home Screen"</strong></p>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="font-bold text-vn-accent">3.</span>
+                <p>Tap <strong>"Add"</strong> to confirm</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowInstallInstructions(false)}
+              className="w-full mt-5 px-4 py-2.5 bg-vn-accent hover:bg-vn-hover rounded-xl transition-colors font-medium"
+            >
+              Got it
+            </button>
+          </motion.div>
+        </div>
+      )}
 
       {isMobile && (
         <MobileNav

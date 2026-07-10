@@ -335,13 +335,21 @@ export default function Player() {
     setBuffered(bufferedEnd)
   }, [])
 
-  const handleMouseMove = useCallback(() => {
-    setShowControls(true)
+  const clearControlsTimeout = useCallback(() => {
     if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+  }, [])
+
+  const startControlsTimeout = useCallback((ms = 4000) => {
+    clearControlsTimeout()
     controlsTimeout.current = setTimeout(() => {
       if (playerState === 'playing') setShowControls(false)
-    }, 2000)
-  }, [playerState])
+    }, ms)
+  }, [playerState, clearControlsTimeout])
+
+  const handleMouseMove = useCallback(() => {
+    setShowControls(true)
+    startControlsTimeout(2000)
+  }, [startControlsTimeout])
 
   const handleProgressClick = useCallback((e: React.MouseEvent) => {
     const rect = progressRef.current?.getBoundingClientRect()
@@ -511,11 +519,17 @@ export default function Player() {
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipAccumRef = useRef(0)
   const touchHandledRef = useRef(false)
+  const isTouchDeviceRef = useRef(false)
+  const longPressFiredRef = useRef(false)
+  const doubleTapFiredRef = useRef(false)
 
   const handleOverlayTouch = useCallback((e: React.TouchEvent) => {
     if ((e.target as HTMLElement).closest('.vn-player-controls')) return
     if (e.touches.length > 1) return
+    isTouchDeviceRef.current = true
     touchHandledRef.current = true
+    longPressFiredRef.current = false
+    doubleTapFiredRef.current = false
 
     const now = Date.now()
     const timeSinceLastTap = now - lastTapTime.current
@@ -527,9 +541,13 @@ export default function Player() {
     if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
 
     tapTimerRef.current = setTimeout(() => {
-      if (tapCountRef.current === 1) {
-        setShowControls(prev => !prev)
-        if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+      if (tapCountRef.current === 1 && !longPressFiredRef.current && !doubleTapFiredRef.current) {
+        setShowControls(prev => {
+          const next = !prev
+          if (next) startControlsTimeout(4000)
+          else clearControlsTimeout()
+          return next
+        })
       }
       tapCountRef.current = 0
       skipAccumRef.current = 0
@@ -538,6 +556,7 @@ export default function Player() {
     if (timeSinceLastTap < 300) {
       if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
       tapCountRef.current = 0
+      doubleTapFiredRef.current = true
 
       skipAccumRef.current += 5
       if (x < screenWidth * 0.3) {
@@ -549,11 +568,11 @@ export default function Player() {
       }
       setTimeout(() => setShowGestureHint(''), 600)
       setShowControls(false)
-      if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+      clearControlsTimeout()
     }
 
     lastTapTime.current = now
-  }, [skip])
+  }, [skip, startControlsTimeout, clearControlsTimeout])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
@@ -577,6 +596,7 @@ export default function Player() {
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
 
     longPressTimer.current = setTimeout(() => {
+      longPressFiredRef.current = true
       if (videoRef.current) videoRef.current.playbackRate = 2
       setShowGestureHint('2x Speed')
     }, 500)
@@ -840,10 +860,14 @@ export default function Player() {
         <div
           className="absolute inset-0"
           onClick={(e) => {
-            if (touchHandledRef.current) { touchHandledRef.current = false; return }
+            if (isTouchDeviceRef.current) return
             if ((e.target as HTMLElement).closest('.vn-player-controls')) return
-            setShowControls(prev => !prev)
-            if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+            setShowControls(prev => {
+              const next = !prev
+              if (next) startControlsTimeout(4000)
+              else clearControlsTimeout()
+              return next
+            })
           }}
           onTouchStart={handleOverlayTouch}
         />
