@@ -478,16 +478,53 @@ export default function Player() {
     document.addEventListener('mouseup', onUp)
   }, [])
 
-  const lastPointerTime = useRef(0)
+  const tapCountRef = useRef(0)
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const skipAccumRef = useRef(0)
+  const touchHandledRef = useRef(false)
 
-  const handleOverlayTap = useCallback((e: React.PointerEvent) => {
+  const handleOverlayTouch = useCallback((e: React.TouchEvent) => {
     if ((e.target as HTMLElement).closest('.vn-controls')) return
+    if (e.touches.length > 1) return
+    touchHandledRef.current = true
+
     const now = Date.now()
-    if (now - lastPointerTime.current < 300) return
-    lastPointerTime.current = now
-    setShowControls(prev => !prev)
-    if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
-  }, [])
+    const timeSinceLastTap = now - lastTapTime.current
+    const screenWidth = window.innerWidth
+    const x = e.touches[0].clientX
+
+    tapCountRef.current += 1
+
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
+
+    tapTimerRef.current = setTimeout(() => {
+      if (tapCountRef.current === 1) {
+        setShowControls(prev => !prev)
+        if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+      }
+      tapCountRef.current = 0
+      skipAccumRef.current = 0
+    }, 300)
+
+    if (timeSinceLastTap < 300) {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
+      tapCountRef.current = 0
+
+      skipAccumRef.current += 5
+      if (x < screenWidth * 0.3) {
+        skip(-skipAccumRef.current)
+        setShowGestureHint(`-${skipAccumRef.current}s`)
+      } else if (x > screenWidth * 0.7) {
+        skip(skipAccumRef.current)
+        setShowGestureHint(`+${skipAccumRef.current}s`)
+      }
+      setTimeout(() => setShowGestureHint(''), 600)
+      setShowControls(false)
+      if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+    }
+
+    lastTapTime.current = now
+  }, [skip])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
@@ -514,25 +551,7 @@ export default function Player() {
       if (videoRef.current) videoRef.current.playbackRate = 2
       setShowGestureHint('2x Speed')
     }, 500)
-
-    const now = Date.now()
-    const timeSinceLastTap = now - lastTapTime.current
-    const screenWidth = window.innerWidth
-    const x = touch.clientX
-
-    if (timeSinceLastTap < 300) {
-      if (x < screenWidth * 0.3) {
-        skip(-5)
-        setShowGestureHint('-5s')
-      } else if (x > screenWidth * 0.7) {
-        skip(5)
-        setShowGestureHint('+5s')
-      }
-      setTimeout(() => setShowGestureHint(''), 600)
-    }
-
-    lastTapTime.current = now
-  }, [skip])
+  }, [])
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && pinchStartRef.current !== null) {
@@ -784,7 +803,13 @@ export default function Player() {
 
         <div
           className="absolute inset-0 z-15"
-          onPointerDown={handleOverlayTap}
+          onClick={(e) => {
+            if (touchHandledRef.current) { touchHandledRef.current = false; return }
+            if ((e.target as HTMLElement).closest('.vn-controls')) return
+            setShowControls(prev => !prev)
+            if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
+          }}
+          onTouchStart={handleOverlayTouch}
         />
 
         {activeCues.length > 0 && showSubtitles && (
