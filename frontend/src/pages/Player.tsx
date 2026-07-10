@@ -37,7 +37,7 @@ export default function Player() {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1)
-  const [showControls, setShowControls] = useState(true)
+  const [showControls, setShowControls] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [showSettings, setShowSettings] = useState(false)
   const [showVolumeSlider, setShowVolumeSlider] = useState(false)
@@ -63,7 +63,6 @@ export default function Player() {
   const [swipeSeekIndicator, setSwipeSeekIndicator] = useState<{ direction: string; amount: number } | null>(null)
 
   const controlsTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastTapTime = useRef(0)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const subtitleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const notificationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -518,45 +517,29 @@ export default function Player() {
   const tapCountRef = useRef(0)
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipAccumRef = useRef(0)
-  const touchHandledRef = useRef(false)
   const isTouchDeviceRef = useRef(false)
   const longPressFiredRef = useRef(false)
-  const doubleTapFiredRef = useRef(false)
+  const lastSingleTapTime = useRef(0)
 
   const handleOverlayTouch = useCallback((e: React.TouchEvent) => {
     if ((e.target as HTMLElement).closest('.vn-player-controls')) return
     if (e.touches.length > 1) return
     isTouchDeviceRef.current = true
-    touchHandledRef.current = true
-    longPressFiredRef.current = false
-    doubleTapFiredRef.current = false
 
     const now = Date.now()
-    const timeSinceLastTap = now - lastTapTime.current
     const screenWidth = window.innerWidth
     const x = e.touches[0].clientX
 
-    tapCountRef.current += 1
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false
+      return
+    }
 
-    if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
+    const timeSinceLastTap = now - lastSingleTapTime.current
 
-    tapTimerRef.current = setTimeout(() => {
-      if (tapCountRef.current === 1 && !longPressFiredRef.current && !doubleTapFiredRef.current) {
-        setShowControls(prev => {
-          const next = !prev
-          if (next) startControlsTimeout(4000)
-          else clearControlsTimeout()
-          return next
-        })
-      }
-      tapCountRef.current = 0
-      skipAccumRef.current = 0
-    }, 300)
-
-    if (timeSinceLastTap < 300) {
+    if (timeSinceLastTap < 300 && lastSingleTapTime.current > 0) {
       if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
-      tapCountRef.current = 0
-      doubleTapFiredRef.current = true
+      lastSingleTapTime.current = 0
 
       skipAccumRef.current += 5
       if (x < screenWidth * 0.3) {
@@ -569,9 +552,22 @@ export default function Player() {
       setTimeout(() => setShowGestureHint(''), 600)
       setShowControls(false)
       clearControlsTimeout()
+      return
     }
 
-    lastTapTime.current = now
+    lastSingleTapTime.current = now
+
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
+    tapTimerRef.current = setTimeout(() => {
+      if (!longPressFiredRef.current) {
+        setShowControls(prev => {
+          const next = !prev
+          if (next) startControlsTimeout(4000)
+          else clearControlsTimeout()
+          return next
+        })
+      }
+    }, 300)
   }, [skip, startControlsTimeout, clearControlsTimeout])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -595,6 +591,7 @@ export default function Player() {
     const touch = e.touches[0]
     touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
 
+    longPressFiredRef.current = false
     longPressTimer.current = setTimeout(() => {
       longPressFiredRef.current = true
       if (videoRef.current) videoRef.current.playbackRate = 2
@@ -704,6 +701,13 @@ export default function Player() {
       if (ambientInterval.current) clearInterval(ambientInterval.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!isMobile) {
+      setShowControls(true)
+      startControlsTimeout(3000)
+    }
+  }, [isMobile, startControlsTimeout])
 
   useEffect(() => {
     if (subtitleTracks.length > 0 && activeSubtitle === null && showSubtitles) {
