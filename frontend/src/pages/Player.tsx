@@ -478,8 +478,13 @@ export default function Player() {
     document.addEventListener('mouseup', onUp)
   }, [])
 
-  const handleVideoInteraction = useCallback((e: React.MouseEvent) => {
+  const lastPointerTime = useRef(0)
+
+  const handleOverlayTap = useCallback((e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('.vn-controls')) return
+    const now = Date.now()
+    if (now - lastPointerTime.current < 300) return
+    lastPointerTime.current = now
     setShowControls(prev => !prev)
     if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
   }, [])
@@ -779,12 +784,7 @@ export default function Player() {
 
         <div
           className="absolute inset-0 z-15"
-          onClick={handleVideoInteraction}
-          onTouchEnd={(e) => {
-            if ((e.target as HTMLElement).closest('.vn-controls')) return
-            setShowControls(prev => !prev)
-            if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
-          }}
+          onPointerDown={handleOverlayTap}
         />
 
         {activeCues.length > 0 && showSubtitles && (
