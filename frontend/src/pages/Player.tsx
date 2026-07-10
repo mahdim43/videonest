@@ -3,13 +3,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { videosApi, historyApi, favoritesApi, subtitlePrefsApi } from '../api/client'
 import { useProfileStore } from '../stores/profileStore'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  ArrowLeft, Heart, Play, Pause, Volume2, VolumeX, Maximize, Minimize,
-  SkipBack, SkipForward, PictureInPicture,
-  Subtitles, ChevronRight, AlertCircle,
-  ChevronLeft, Sun, Moon, Settings as SettingsIcon
-} from 'lucide-react'
+import { Heart, AlertCircle, ChevronLeft } from 'lucide-react'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useIsMobile } from '../hooks/useIsMobile'
+import {
+  MobileControls,
+  DesktopControls,
+  SubtitleOverlay,
+  SubtitleMenu,
+  SpeedMenu,
+  GestureHint,
+} from '../components/player'
 
 type PlayerState = 'loading' | 'buffering' | 'playing' | 'paused' | 'error'
 
@@ -21,8 +25,8 @@ export default function Player() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const progressRef = useRef<HTMLDivElement>(null)
-
   const ambientCanvasRef = useRef<HTMLCanvasElement>(null)
+  const isMobile = useIsMobile()
 
   const [playerState, setPlayerState] = useState<PlayerState>('loading')
   const [isMuted, setIsMuted] = useState(false)
@@ -39,7 +43,6 @@ export default function Player() {
   const [showSubtitleMenu, setShowSubtitleMenu] = useState(false)
   const [localPrefs, setLocalPrefs] = useState<any>(null)
   const [activeCues, setActiveCues] = useState<string[]>([])
-
   const [subtitleNotification, setSubtitleNotification] = useState('')
   const [buffered, setBuffered] = useState(0)
   const [showGestureHint, setShowGestureHint] = useState('')
@@ -484,7 +487,7 @@ export default function Player() {
   const touchHandledRef = useRef(false)
 
   const handleOverlayTouch = useCallback((e: React.TouchEvent) => {
-    if ((e.target as HTMLElement).closest('.vn-controls')) return
+    if ((e.target as HTMLElement).closest('.vn-player-controls')) return
     if (e.touches.length > 1) return
     touchHandledRef.current = true
 
@@ -581,14 +584,14 @@ export default function Player() {
     }
 
     if (startX < screenWidth * 0.3 && Math.abs(dy) > 30 && Math.abs(dy) > Math.abs(dx)) {
-      const delta = -dy / (screenHeight())
+      const delta = -dy / (window.innerHeight)
       const newBrightness = Math.max(0.1, Math.min(1, brightness + delta * 0.5))
       setBrightness(newBrightness)
       setShowBrightness(true)
     }
 
     if (startX > screenWidth * 0.7 && Math.abs(dy) > 30 && Math.abs(dy) > Math.abs(dx)) {
-      const delta = -dy / (screenHeight())
+      const delta = -dy / (window.innerHeight)
       const newVolume = Math.max(0, Math.min(1, volume + delta * 0.5))
       if (videoRef.current) videoRef.current.volume = newVolume
       setVolume(newVolume)
@@ -716,8 +719,6 @@ export default function Player() {
     }
   }, [subtitlePrefs])
 
-  const screenHeight = () => window.innerHeight
-
   const formatTime = (s: number) => {
     const h = Math.floor(s / 3600)
     const m = Math.floor((s % 3600) / 60)
@@ -738,24 +739,20 @@ export default function Player() {
     )
   }
 
-  const progressPercent = (currentTime / duration) * 100
-  const bufferedPercent = (buffered / duration) * 100
-
   return (
     <div
       ref={containerRef}
-      className={`min-h-screen bg-black relative select-none overflow-hidden ${cinemaMode ? 'cursor-default' : 'cursor-none'}`}
-      onMouseMove={handleMouseMove}
+      className="h-dvh w-full bg-black flex flex-col items-center justify-center relative select-none overflow-hidden"
+      onMouseMove={!isMobile ? handleMouseMove : undefined}
       onMouseLeave={() => {
-        if (playerState === 'playing') setShowControls(false)
+        if (!isMobile && playerState === 'playing') setShowControls(false)
       }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      onWheel={handleWheel}
+      onWheel={!isMobile ? handleWheel : undefined}
       style={{ cursor: showControls ? 'default' : 'none' }}
     >
-
       <canvas ref={ambientCanvasRef} className="hidden" width={64} height={36} />
 
       {cinemaMode && (
@@ -769,14 +766,15 @@ export default function Player() {
         />
       )}
 
+      {/* Video container - fits within viewport */}
       <div
-        className="relative z-10"
+        className="relative w-full h-full flex items-center justify-center"
         style={{ filter: `brightness(${brightness})` }}
       >
         <video
           ref={videoRef}
           src={videosApi.streamUrl(video.id)}
-          className="w-full h-screen object-contain"
+          className="max-w-full max-h-full w-auto h-auto object-contain"
           onTimeUpdate={handleTimeUpdate}
           onProgress={handleProgress}
           onLoadedMetadata={(e) => {
@@ -801,57 +799,33 @@ export default function Player() {
           ))}
         </video>
 
+        {/* Touch overlay - only catches taps, NOT on controls */}
         <div
-          className="absolute inset-0 z-15"
+          className="absolute inset-0"
           onClick={(e) => {
             if (touchHandledRef.current) { touchHandledRef.current = false; return }
-            if ((e.target as HTMLElement).closest('.vn-controls')) return
+            if ((e.target as HTMLElement).closest('.vn-player-controls')) return
             setShowControls(prev => !prev)
             if (controlsTimeout.current) clearTimeout(controlsTimeout.current)
           }}
           onTouchStart={handleOverlayTouch}
         />
 
-        {activeCues.length > 0 && showSubtitles && (
-          <div
-            className="absolute left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center gap-1"
-            style={{ bottom: `${localPrefs?.position ?? 60}px` }}
-          >
-            {activeCues.map((text, i) => (
-              <div
-                key={i}
-                className="px-3 py-1 rounded-md text-center max-w-[80%]"
-                style={{
-                  fontSize: `${localPrefs?.font_size || 24}px`,
-                  color: localPrefs?.color || '#FFFFFF',
-                  backgroundColor: (localPrefs?.background_opacity ?? 0.5) > 0
-                    ? `rgba(0, 0, 0, ${localPrefs?.background_opacity ?? 0.5})`
-                    : 'transparent',
-                  textShadow: localPrefs?.outline
-                    ? (() => {
-                        const w = localPrefs?.outline_width || 2
-                        const c = localPrefs?.outline_color || '#000000'
-                        return `-${w}px -${w}px 0 ${c}, ${w}px -${w}px 0 ${c}, -${w}px ${w}px 0 ${c}, ${w}px ${w}px 0 ${c}`
-                      })()
-                    : localPrefs?.shadow
-                      ? `${localPrefs?.shadow_offset || 2}px ${localPrefs?.shadow_offset || 2}px 2px ${localPrefs?.shadow_color || '#000000'}`
-                      : 'none',
-                  lineHeight: 1.4,
-                }}
-                dangerouslySetInnerHTML={{ __html: text }}
-              />
-            ))}
-          </div>
-        )}
+        <SubtitleOverlay
+          activeCues={activeCues}
+          showSubtitles={showSubtitles}
+          prefs={localPrefs}
+        />
       </div>
 
+      {/* Loading / Buffering / Error states */}
       <AnimatePresence>
         {playerState === 'buffering' && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none z-10"
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-40"
           >
             <motion.div
               animate={{ rotate: 360 }}
@@ -868,7 +842,7 @@ export default function Player() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10"
+            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-40"
           >
             <motion.div
               animate={{ rotate: 360 }}
@@ -886,7 +860,7 @@ export default function Player() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10"
+            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-40"
           >
             <AlertCircle className="w-16 h-16 text-vn-accent mb-4" />
             <p className="text-vn-text text-lg font-medium mb-2">Unable to play video</p>
@@ -895,20 +869,7 @@ export default function Player() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {showGestureHint && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.5 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
-          >
-            <div className="bg-black/80 backdrop-blur-md px-8 py-4 rounded-2xl">
-              <span className="text-4xl font-bold text-white">{showGestureHint}</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <GestureHint text={showGestureHint} />
 
       <AnimatePresence>
         {swipeSeekIndicator && (
@@ -916,7 +877,7 @@ export default function Player() {
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5 }}
-            className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-40"
           >
             <div className="bg-black/80 backdrop-blur-md px-8 py-4 rounded-2xl">
               <span className="text-3xl font-bold text-white">
@@ -933,10 +894,10 @@ export default function Player() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-30"
+            className="absolute left-4 top-1/2 -translate-y-1/2 z-40"
           >
             <div className="flex flex-col items-center gap-2 bg-black/70 backdrop-blur-md rounded-xl p-2">
-              <Sun className="w-4 h-4 text-yellow-400" />
+              <span className="text-xs text-yellow-400">☀</span>
               <div className="w-1 h-24 bg-white/20 rounded-full relative">
                 <div
                   className="absolute bottom-0 left-0 right-0 bg-yellow-400 rounded-full"
@@ -1013,528 +974,260 @@ export default function Player() {
         )}
       </AnimatePresence>
 
+      {/* Subtitle menu */}
       <AnimatePresence>
         {showSubtitleMenu && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="absolute bottom-20 right-12 z-50"
-          >
-            <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-4 w-64 shadow-2xl max-h-[80vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-white/80">Subtitles</p>
-                <button
-                  onClick={() => setShowSubtitleMenu(false)}
-                  className="text-white/40 hover:text-white text-xs"
-                >
-                  Close
-                </button>
-              </div>
-
-              {/* Track Selection */}
-              <div className="space-y-1 mb-4">
-                <button
-                  onClick={() => {
-                    setActiveSubtitle(null)
-                    setShowSubtitles(false)
-                    showNotification('Subtitles Off')
-                  }}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                    activeSubtitle === null ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
-                  }`}
-                >
-                  Off
-                </button>
-                {subtitleTracks.map((track: any) => (
-                  <button
-                    key={track.index}
-                    onClick={() => {
-                      setActiveSubtitle(track.index)
-                      setShowSubtitles(true)
-                      showNotification(`Subtitles: ${track.title || track.language || 'Track ' + track.index}`)
-                    }}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                      activeSubtitle === track.index ? 'bg-vn-accent text-white' : 'hover:bg-white/10 text-white/80'
-                    }`}
-                  >
-                    {track.title || track.language || `Track ${track.index}`}
-                  </button>
-                ))}
-                {subtitleTracks.length === 0 && (
-                  <p className="text-xs text-white/40 px-3 py-2">No subtitles found</p>
-                )}
-              </div>
-
-              <hr className="border-white/10 my-3" />
-
-              {/* Appearance Settings */}
-              <div className="space-y-4">
-                {/* Font Size */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Font Size</label>
-                    <span className="text-[10px] text-white/40">{localPrefs?.font_size || 24}px</span>
-                  </div>
-                  <input
-                    type="range" min="12" max="48" step="2"
-                    value={localPrefs?.font_size || 24}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value)
-                      const next = { ...localPrefs, font_size: val }
-                      setLocalPrefs(next)
-                      updateSubtitlePrefsMutation.mutate({ font_size: val })
-                    }}
-                    className="w-full accent-vn-accent h-1"
-                  />
-                </div>
-
-                {/* Background */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Background</label>
-                    <button
-                      onClick={() => {
-                        const val = (localPrefs?.background_opacity ?? 0.5) > 0 ? 0 : 0.5
-                        const next = { ...localPrefs, background_opacity: val }
-                        setLocalPrefs(next)
-
-                        updateSubtitlePrefsMutation.mutate({ background_opacity: val })
-                      }}
-                      className={`w-8 h-4 rounded-full transition-colors ${(localPrefs?.background_opacity ?? 0.5) > 0 ? 'bg-vn-accent' : 'bg-white/20'}`}
-                    >
-                      <div className={`w-3 h-3 bg-white rounded-full transition-transform ${(localPrefs?.background_opacity ?? 0.5) > 0 ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
-                  </div>
-                  {(localPrefs?.background_opacity ?? 0.5) > 0 && (
-                    <input
-                      type="range" min="0.1" max="1" step="0.1"
-                      value={localPrefs?.background_opacity ?? 0.5}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value)
-                        const next = { ...localPrefs, background_opacity: val }
-                        setLocalPrefs(next)
-
-                        updateSubtitlePrefsMutation.mutate({ background_opacity: val })
-                      }}
-                      className="w-full accent-vn-accent h-1"
-                    />
-                  )}
-                </div>
-
-                {/* Position from Bottom */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Position from Bottom</label>
-                    <span className="text-[10px] text-white/40">{localPrefs?.position ?? 60}px</span>
-                  </div>
-                  <input
-                    type="range" min="10" max="300" step="5"
-                    value={localPrefs?.position ?? 60}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value)
-                      const next = { ...localPrefs, position: val }
-                      setLocalPrefs(next)
-                      updateSubtitlePrefsMutation.mutate({ position: val })
-                    }}
-                    className="w-full accent-vn-accent h-1"
-                  />
-                </div>
-
-                {/* Outline */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Outline</label>
-                    <button
-                      onClick={() => {
-                        const val = !localPrefs?.outline
-                        const next = { ...localPrefs, outline: val }
-                        setLocalPrefs(next)
-
-                        updateSubtitlePrefsMutation.mutate({ outline: val })
-                      }}
-                      className={`w-8 h-4 rounded-full transition-colors ${localPrefs?.outline ? 'bg-vn-accent' : 'bg-white/20'}`}
-                    >
-                      <div className={`w-3 h-3 bg-white rounded-full transition-transform ${localPrefs?.outline ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
-                  </div>
-                  {localPrefs?.outline && (
-                    <input
-                      type="range" min="1" max="4" step="1"
-                      value={localPrefs?.outline_width || 2}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value)
-                        const next = { ...localPrefs, outline_width: val }
-                        setLocalPrefs(next)
-
-                        updateSubtitlePrefsMutation.mutate({ outline_width: val })
-                      }}
-                      className="w-full accent-vn-accent h-1"
-                    />
-                  )}
-                </div>
-
-                {/* Shadow */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] text-white/50 uppercase tracking-wider">Shadow</label>
-                    <button
-                      onClick={() => {
-                        const val = !localPrefs?.shadow
-                        const next = { ...localPrefs, shadow: val }
-                        setLocalPrefs(next)
-
-                        updateSubtitlePrefsMutation.mutate({ shadow: val })
-                      }}
-                      className={`w-8 h-4 rounded-full transition-colors ${localPrefs?.shadow ? 'bg-vn-accent' : 'bg-white/20'}`}
-                    >
-                      <div className={`w-3 h-3 bg-white rounded-full transition-transform ${localPrefs?.shadow ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+          <div className="absolute z-50 vn-player-controls" style={{ bottom: isMobile ? '180px' : '80px', right: isMobile ? '16px' : '48px' }}>
+            <SubtitleMenu
+              show={showSubtitleMenu}
+              onClose={() => setShowSubtitleMenu(false)}
+              subtitleTracks={subtitleTracks}
+              activeSubtitle={activeSubtitle}
+              localPrefs={localPrefs}
+              onSelectTrack={(trackIndex) => {
+                if (trackIndex === null) {
+                  setActiveSubtitle(null)
+                  setShowSubtitles(false)
+                  showNotification('Subtitles Off')
+                } else {
+                  setActiveSubtitle(trackIndex)
+                  setShowSubtitles(true)
+                  const track = subtitleTracks.find((t: any) => t.index === trackIndex)
+                  showNotification(`Subtitles: ${track?.title || track?.language || 'Track ' + trackIndex}`)
+                }
+              }}
+              onUpdatePrefs={(data) => {
+                const next = { ...localPrefs, ...data }
+                setLocalPrefs(next)
+                updateSubtitlePrefsMutation.mutate(data)
+              }}
+            />
+          </div>
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showControls && playerState !== 'loading' && playerState !== 'error' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="absolute inset-0 pointer-events-none z-30 vn-controls"
-          >
-            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-auto" />
-
-            <div className="absolute top-0 left-0 right-0 p-4 sm:p-6 pointer-events-auto">
-              <motion.div
-                initial={{ y: -20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                className="flex items-center justify-between max-w-7xl mx-auto"
-              >
-                <button
-                  onClick={() => navigate(-1)}
-                  className="p-3 rounded-2xl bg-white/10 backdrop-blur-md hover:bg-white/20 
-                             transition-all duration-300 hover:scale-105 active:scale-95"
-                  aria-label="Go back"
-                >
-                  <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-                </button>
-
-                <h2 className="text-sm sm:text-lg font-heading font-semibold truncate max-w-xs sm:max-w-2xl px-4">
-                  {video.filename.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
-                </h2>
-
-                <div className="flex items-center gap-2">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => toggleFavoriteMutation.mutate()}
-                    className="p-3 rounded-2xl bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
-                    aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      {/* ALL CONTROLS are in one z-50 layer ABOVE the touch overlay */}
+      {showControls && playerState !== 'loading' && playerState !== 'error' && (
+        <div className="absolute inset-0 z-50 vn-player-controls pointer-events-none">
+          {/* Mobile header */}
+          {isMobile && (
+            <div className="absolute top-0 left-0 right-0 p-4 pointer-events-auto">
+              <div className="bg-gradient-to-b from-black/90 to-transparent rounded-b-2xl p-4">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); navigate(-1) }}
+                    className="p-3 rounded-2xl bg-white/10 backdrop-blur-md active:bg-white/20 
+                               transition-all duration-300 active:scale-95"
                   >
-                    <Heart className={`w-5 h-5 sm:w-6 sm:h-6 ${isFavorite ? 'fill-vn-accent text-vn-accent drop-shadow-[0_0_8px_rgba(217,4,41,0.8)]' : ''}`} />
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+
+                  <h2 className="text-sm font-heading font-semibold truncate max-w-[60%] px-4">
+                    {video.filename.replace(/\.[^/.]+$/, '').replace(/\./g, ' ')}
+                  </h2>
+
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => { e.stopPropagation(); toggleFavoriteMutation.mutate() }}
+                    className="p-3 rounded-2xl bg-white/10 backdrop-blur-md transition-all"
+                  >
+                    <Heart className={`w-5 h-5 ${isFavorite ? 'fill-vn-accent text-vn-accent' : ''}`} />
                   </motion.button>
                 </div>
-              </motion.div>
+              </div>
             </div>
+          )}
 
+          {/* Desktop header */}
+          {!isMobile && (
+            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-auto" />
+          )}
+
+          {/* Center play controls - desktop only */}
+          {!isMobile && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="flex items-center gap-3 sm:gap-6 pointer-events-auto">
+              <div className="flex items-center gap-6 pointer-events-auto">
                 {neighbors?.prev && (
                   <motion.button
                     whileHover={{ scale: 1.08 }}
                     whileTap={{ scale: 0.92 }}
-                    onClick={() => navigate(`/watch/${neighbors.prev.id}`)}
-                    className="p-3 sm:p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                               transition-all duration-200"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/watch/${neighbors.prev.id}`) }}
+                    className="p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
                     aria-label="Previous episode"
                   >
-                    <ChevronLeft className="w-6 h-6 sm:w-7 sm:h-7" />
+                    <ChevronLeft className="w-7 h-7" />
                   </motion.button>
                 )}
 
                 <motion.button
                   whileHover={{ scale: 1.08 }}
                   whileTap={{ scale: 0.92 }}
-                  onClick={() => skip(-10)}
-                  className="p-3 sm:p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                             transition-all duration-200 hidden sm:flex"
+                  onClick={(e) => { e.stopPropagation(); skip(-10) }}
+                  className="p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
                   aria-label="Skip back 10 seconds"
                 >
-                  <SkipBack className="w-6 h-6 sm:w-8 sm:h-8" />
+                  <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12.5 8V4l-4.5 4.5 4.5 4.5V8c4.14 0 7.5 3.36 7.5 7.5S16.64 23 12.5 23 5 19.64 5 15.5" />
+                  </svg>
                 </motion.button>
 
                 <motion.button
                   whileHover={{ scale: 1.08 }}
                   whileTap={{ scale: 0.92 }}
-                  onClick={togglePlay}
-                  className="p-5 sm:p-6 rounded-full bg-vn-accent hover:bg-vn-hover 
-                             transition-all duration-200 shadow-[0_0_30px_rgba(217,4,41,0.4)]"
+                  onClick={(e) => { e.stopPropagation(); togglePlay() }}
+                  className="p-6 rounded-full bg-vn-accent hover:bg-vn-hover transition-all shadow-[0_0_30px_rgba(217,4,41,0.4)]"
                   aria-label={playerState === 'playing' ? 'Pause' : 'Play'}
                 >
                   {playerState === 'playing' ? (
-                    <Pause className="w-8 h-8 sm:w-10 sm:h-10" />
+                    <svg className="w-10 h-10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
                   ) : (
-                    <Play className="w-8 h-8 sm:w-10 sm:h-10 ml-1" />
+                    <svg className="w-10 h-10 ml-1" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                   )}
                 </motion.button>
 
                 <motion.button
                   whileHover={{ scale: 1.08 }}
                   whileTap={{ scale: 0.92 }}
-                  onClick={() => skip(10)}
-                  className="p-3 sm:p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                             transition-all duration-200 hidden sm:flex"
+                  onClick={(e) => { e.stopPropagation(); skip(10) }}
+                  className="p-4 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
                   aria-label="Skip forward 10 seconds"
                 >
-                  <SkipForward className="w-6 h-6 sm:w-8 sm:h-8" />
+                  <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M11.5 8V4l4.5 4.5-4.5 4.5V8c-4.14 0-7.5 3.36-7.5 7.5S7.36 23 11.5 23 19 19.64 19 15.5" />
+                  </svg>
                 </motion.button>
 
                 {neighbors?.next && (
                   <motion.button
                     whileHover={{ scale: 1.08 }}
                     whileTap={{ scale: 0.92 }}
-                    onClick={() => navigate(`/watch/${neighbors.next.id}`)}
-                    className="p-3 sm:p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 
-                               transition-all duration-200"
+                    onClick={(e) => { e.stopPropagation(); navigate(`/watch/${neighbors.next.id}`) }}
+                    className="p-3 rounded-full bg-white/10 backdrop-blur-md hover:bg-white/20 transition-all"
                     aria-label="Next episode"
                   >
-                    <ChevronRight className="w-6 h-6 sm:w-7 sm:h-7" />
+                    <ChevronLeft className="w-7 h-7 rotate-180" />
                   </motion.button>
                 )}
               </div>
             </div>
+          )}
 
-            <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-auto" />
+          {/* Bottom controls */}
+          {isMobile ? (
+            <MobileControls
+              playerState={playerState}
+              currentTime={currentTime}
+              duration={duration}
+              buffered={buffered}
+              volume={volume}
+              isMuted={isMuted}
+              isFullscreen={isFullscreen}
+              playbackSpeed={playbackSpeed}
+              showSubtitleMenu={showSubtitleMenu}
+              showSettings={showSettings}
+              hasPrev={!!neighbors?.prev}
+              hasNext={!!neighbors?.next}
+              onTogglePlay={togglePlay}
+              onToggleMute={toggleMute}
+              onToggleFullscreen={toggleFullscreen}
+              onSkipBack={() => skip(-10)}
+              onSkipForward={() => skip(10)}
+              onPrevEpisode={() => neighbors?.prev && navigate(`/watch/${neighbors.prev.id}`)}
+              onNextEpisode={() => neighbors?.next && navigate(`/watch/${neighbors.next.id}`)}
+              onShowSubtitleMenu={() => setShowSubtitleMenu(s => !s)}
+              onShowSettings={() => setShowSettings(s => !s)}
+              onSeek={seek}
+              formatTime={formatTime}
+            />
+          ) : (
+            <DesktopControls
+              playerState={playerState}
+              currentTime={currentTime}
+              duration={duration}
+              buffered={buffered}
+              volume={volume}
+              isMuted={isMuted}
+              isFullscreen={isFullscreen}
+              playbackSpeed={playbackSpeed}
+              showSubtitleMenu={showSubtitleMenu}
+              showSettings={showSettings}
+              showVolumeSlider={showVolumeSlider}
+              showHoverTime={showHoverTime}
+              hoverTime={hoverTime}
+              isDragging={isDragging}
+              dragTime={dragTime}
+              autoplay={autoplay}
+              cinemaMode={cinemaMode}
+              hasPrev={!!neighbors?.prev}
+              hasNext={!!neighbors?.next}
+              videoFilename={video.filename}
+              onTogglePlay={togglePlay}
+              onToggleMute={toggleMute}
+              onToggleFullscreen={toggleFullscreen}
+              onTogglePiP={togglePiP}
+              onToggleAutoplay={() => setAutoplay(a => !a)}
+              onToggleCinemaMode={() => setCinemaMode(c => !c)}
+              onSkipBack={() => skip(-10)}
+              onSkipForward={() => skip(10)}
+              onPrevEpisode={() => neighbors?.prev && navigate(`/watch/${neighbors.prev.id}`)}
+              onNextEpisode={() => neighbors?.next && navigate(`/watch/${neighbors.next.id}`)}
+              onShowSubtitleMenu={() => setShowSubtitleMenu(s => !s)}
+              onShowSettings={() => setShowSettings(s => !s)}
+              onProgressClick={handleProgressClick}
+              onProgressHover={handleProgressHover}
+              onProgressLeave={() => setShowHoverTime(false)}
+              onProgressDragStart={handleProgressDragStart}
+              onProgressDrag={handleProgressDrag}
+              onProgressDragEnd={handleProgressDragEnd}
+              onVolumeChange={handleVolumeChange}
+              onVolumeDragStart={handleVolumeDragStart}
+              onMouseMove={handleMouseMove}
+              formatTime={formatTime}
+            />
+          )}
 
-            <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 pointer-events-auto">
-              <div className="max-w-6xl mx-auto space-y-3">
-                <div
-                  ref={progressRef}
-                  className="relative h-1.5 sm:h-2 bg-white/20 rounded-full cursor-pointer group"
-                  onClick={handleProgressClick}
-                  onMouseMove={handleProgressHover}
-                  onMouseLeave={() => setShowHoverTime(false)}
-                  onMouseDown={handleProgressDragStart}
-                  onMouseMoveCapture={handleProgressDrag}
-                  onMouseUp={handleProgressDragEnd}
-                >
-                  <div
-                    className="absolute h-full bg-white/30 rounded-full"
-                    style={{ width: `${bufferedPercent}%` }}
-                  />
-                  <motion.div
-                    className="absolute h-full bg-vn-accent rounded-full"
-                    style={{ width: `${isDragging ? (dragTime / duration) * 100 : progressPercent}%` }}
-                    layout
-                    transition={{ duration: 0.1 }}
-                  />
-                  <motion.div
-                    className="absolute w-4 h-4 bg-vn-accent rounded-full -translate-y-1/2 top-1/2 
-                               opacity-0 group-hover:opacity-100 transition-opacity duration-200
-                               shadow-[0_0_10px_rgba(217,4,41,0.8)]"
-                    style={{ 
-                      left: `calc(${isDragging ? (dragTime / duration) * 100 : progressPercent}% - 8px)` 
-                    }}
-                  />
-                  <AnimatePresence>
-                    {showHoverTime && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 5 }}
-                        className="absolute bottom-6 px-3 py-1.5 bg-black/90 rounded-lg text-xs
-                                   pointer-events-none backdrop-blur-sm"
-                        style={{ left: `${(hoverTime / duration) * 100}%`, transform: 'translateX(-50%)' }}
-                      >
-                        {formatTime(hoverTime)}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 sm:gap-3">
+          {/* Mobile speed selector */}
+          {isMobile && showSettings && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="absolute bottom-36 left-4 right-4 pointer-events-auto"
+            >
+              <div className="bg-black/95 backdrop-blur-xl rounded-2xl p-4">
+                <p className="text-xs text-white/50 mb-3 uppercase tracking-wider">Playback Speed</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => (
                     <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={togglePlay}
-                      className="p-2 rounded-xl hover:bg-white/10 transition-all"
-                      aria-label={playerState === 'playing' ? 'Pause' : 'Play'}
+                      key={speed}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={(e) => { e.stopPropagation(); changeSpeed(speed) }}
+                      className={`px-3 py-2.5 rounded-xl text-sm transition-all ${
+                        playbackSpeed === speed
+                          ? 'bg-vn-accent text-white'
+                          : 'bg-white/10 hover:bg-white/20'
+                      }`}
                     >
-                      {playerState === 'playing' ? (
-                        <Pause className="w-5 h-5 sm:w-6 sm:h-6" />
-                      ) : (
-                        <Play className="w-5 h-5 sm:w-6 sm:h-6 ml-0.5" />
-                      )}
+                      {speed}x
                     </motion.button>
-
-                    <span className="text-xs sm:text-sm font-mono text-white/80">
-                      {formatTime(isDragging ? dragTime : currentTime)} / {formatTime(duration)}
-                    </span>
-
-                    <div
-                      className="relative"
-                      onMouseEnter={() => setShowVolumeSlider(true)}
-                      onMouseLeave={() => setShowVolumeSlider(false)}
-                    >
-                      <AnimatePresence>
-                        {showVolumeSlider && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-auto"
-                          >
-                            <div className="bg-black/90 backdrop-blur-xl rounded-xl p-3 flex flex-col items-center gap-2">
-                              <span className="text-xs text-white/60 font-mono">{Math.round(volume * 100)}%</span>
-                              <div
-                                ref={volumeSliderRef}
-                                onMouseDown={handleVolumeDragStart}
-                                onClick={handleVolumeChange}
-                                className="relative w-28 h-1.5 bg-white/20 rounded-full cursor-pointer"
-                              >
-                                <div
-                                  className="absolute top-0 left-0 h-full bg-vn-accent rounded-full pointer-events-none"
-                                  style={{ width: `${volume * 100}%` }}
-                                />
-                                <div
-                                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none"
-                                  style={{ left: `calc(${volume * 100}% - 6px)` }}
-                                />
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={toggleMute}
-                        className="p-2 rounded-xl hover:bg-white/10 transition-all pointer-events-auto"
-                        aria-label={isMuted ? 'Unmute' : 'Mute'}
-                      >
-                        {isMuted || volume === 0 ? (
-                          <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />
-                        ) : (
-                          <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                        )}
-                      </motion.button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 sm:gap-2">
-                    <div className="relative">
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => {
-                          setShowSubtitleMenu(s => !s)
-                        }}
-                        className={`p-2 rounded-xl transition-all ${showSubtitleMenu ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
-                        aria-label="Subtitle settings"
-                      >
-                        <SettingsIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                      </motion.button>
-                    </div>
-
-                    <div className="relative">
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => setShowSettings(!showSettings)}
-                        className="p-2 rounded-xl hover:bg-white/10 transition-all text-xs sm:text-sm font-medium"
-                        aria-label="Playback speed"
-                      >
-                        {playbackSpeed}x
-                      </motion.button>
-
-                      <AnimatePresence>
-                        {showSettings && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                            className="absolute bottom-full right-0 mb-2 p-3 bg-black/95 backdrop-blur-xl 
-                                       rounded-2xl min-w-[160px] shadow-2xl"
-                          >
-                            <p className="text-[10px] text-white/50 mb-2 uppercase tracking-wider">Speed</p>
-                            <div className="grid grid-cols-3 gap-1">
-                              {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => (
-                                <motion.button
-                                  key={speed}
-                                  whileHover={{ scale: 1.05 }}
-                                  whileTap={{ scale: 0.95 }}
-                                  onClick={() => changeSpeed(speed)}
-                                  className={`px-2 py-1.5 rounded-lg text-xs transition-all ${
-                                    playbackSpeed === speed
-                                      ? 'bg-vn-accent text-white'
-                                      : 'bg-white/10 hover:bg-white/20'
-                                  }`}
-                                >
-                                  {speed}x
-                                </motion.button>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => setAutoplay(a => !a)}
-                      className={`p-2 rounded-xl transition-all ${autoplay ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
-                      aria-label="Toggle autoplay"
-                    >
-                      <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
-                    </motion.button>
-
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => setCinemaMode(c => !c)}
-                      className={`p-2 rounded-xl transition-all ${cinemaMode ? 'bg-vn-accent' : 'hover:bg-white/10'}`}
-                      aria-label="Toggle cinema mode"
-                    >
-                      {cinemaMode ? <Moon className="w-4 h-4 sm:w-5 sm:h-5" /> : <Sun className="w-4 h-4 sm:w-5 sm:h-5" />}
-                    </motion.button>
-
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={togglePiP}
-                      className="p-2 rounded-xl hover:bg-white/10 transition-all hidden sm:flex"
-                      aria-label="Picture in picture"
-                    >
-                      <PictureInPicture className="w-5 h-5" />
-                    </motion.button>
-
-                    <motion.button
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={toggleFullscreen}
-                      className="p-2 rounded-xl hover:bg-white/10 transition-all"
-                      aria-label="Toggle fullscreen"
-                    >
-                      {isFullscreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
-                    </motion.button>
-                  </div>
+                  ))}
                 </div>
               </div>
+            </motion.div>
+          )}
+
+          {/* Desktop speed menu */}
+          {!isMobile && showSettings && (
+            <div className="absolute bottom-20 right-12 z-50 pointer-events-auto">
+              <SpeedMenu
+                show={showSettings}
+                playbackSpeed={playbackSpeed}
+                onSelectSpeed={changeSpeed}
+              />
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </div>
+      )}
     </div>
   )
 }

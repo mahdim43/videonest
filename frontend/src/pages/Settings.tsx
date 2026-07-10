@@ -61,7 +61,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-vn-bg">
+    <div className="min-h-screen bg-vn-bg safe-area-inset">
       <header className="sticky top-0 z-50 bg-vn-bg/80 backdrop-blur-xl border-b border-vn-panel">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-4">
           <button
@@ -70,18 +70,18 @@ export default function Settings() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-heading font-semibold">Settings</h1>
+          <h1 className="text-lg sm:text-xl font-heading font-semibold">Settings</h1>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-8">
+      <main className="max-w-3xl mx-auto px-4 py-6 sm:py-8 space-y-6 sm:space-y-8">
         <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-vn-panel rounded-2xl p-6"
+          className="bg-vn-panel rounded-2xl p-4 sm:p-6"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-heading font-semibold">Folders</h2>
+            <h2 className="text-base sm:text-lg font-heading font-semibold">Folders</h2>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -96,7 +96,7 @@ export default function Settings() {
               ) : (
                 <RefreshCw className="w-4 h-4" />
               )}
-              Rescan
+              <span className="hidden sm:inline">Rescan</span>
             </motion.button>
           </div>
           
@@ -107,8 +107,8 @@ export default function Settings() {
                 className="flex items-center justify-between p-3 bg-vn-card rounded-xl"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-vn-text font-medium">{folder.name}</p>
-                  <p className="text-sm text-vn-text-secondary truncate">
+                  <p className="text-sm sm:text-vn-text font-medium">{folder.name}</p>
+                  <p className="text-xs sm:text-sm text-vn-text-secondary truncate">
                     {folder.path}
                   </p>
                 </div>
@@ -128,13 +128,13 @@ export default function Settings() {
             )}
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <input
               type="text"
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               placeholder="Name (e.g. Movies)"
-              className="flex-1 px-4 py-2 bg-vn-card rounded-xl text-vn-text
+              className="flex-1 px-4 py-3 sm:py-2 bg-vn-card rounded-xl text-vn-text
                          placeholder:text-vn-text-secondary outline-none focus:ring-2 
                          focus:ring-vn-accent"
             />
@@ -143,7 +143,7 @@ export default function Settings() {
               value={newFolderPath}
               onChange={(e) => setNewFolderPath(e.target.value)}
               placeholder="C:\Videos\Movies"
-              className="flex-1 px-4 py-2 bg-vn-card rounded-xl text-vn-text
+              className="flex-1 px-4 py-3 sm:py-2 bg-vn-card rounded-xl text-vn-text
                          placeholder:text-vn-text-secondary outline-none focus:ring-2 
                          focus:ring-vn-accent"
             />
@@ -152,9 +152,9 @@ export default function Settings() {
               whileTap={{ scale: 0.98 }}
               onClick={handleAddFolder}
               disabled={!newFolderName.trim() || !newFolderPath.trim()}
-              className="px-4 py-2 bg-vn-accent rounded-xl font-medium
+              className="px-4 py-3 sm:py-2 bg-vn-accent rounded-xl font-medium
                          hover:bg-vn-hover transition-colors disabled:opacity-50
-                         disabled:cursor-not-allowed flex items-center gap-2"
+                         disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <FolderPlus className="w-4 h-4" />
               Add
