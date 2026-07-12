@@ -44,13 +44,13 @@ interface DesktopControlsProps {
   onProgressHover: (e: React.MouseEvent) => void
   onProgressLeave: () => void
   onProgressDragStart: (e: React.MouseEvent) => void
-  onProgressDrag: (e: React.MouseEvent) => void
-  onProgressDragEnd: () => void
   onProgressTouchStart: (e: React.TouchEvent) => void
   onProgressTouchMove: (e: React.TouchEvent) => void
   onProgressTouchEnd: () => void
   onVolumeChange: (e: React.MouseEvent) => void
   onVolumeDragStart: (e: React.MouseEvent) => void
+  onShowVolumeSlider: () => void
+  onHideVolumeSlider: () => void
   onMouseMove: () => void
   formatTime: (s: number) => string
 }
@@ -93,13 +93,13 @@ export default function DesktopControls({
   onProgressHover,
   onProgressLeave,
   onProgressDragStart,
-  onProgressDrag,
-  onProgressDragEnd,
   onProgressTouchStart,
   onProgressTouchMove,
   onProgressTouchEnd,
   onVolumeChange,
   onVolumeDragStart,
+  onShowVolumeSlider,
+  onHideVolumeSlider,
   onMouseMove,
   formatTime,
 }: DesktopControlsProps) {
@@ -225,8 +225,6 @@ export default function DesktopControls({
             onMouseMove={onProgressHover}
             onMouseLeave={onProgressLeave}
             onMouseDown={onProgressDragStart}
-            onMouseMoveCapture={onProgressDrag}
-            onMouseUp={onProgressDragEnd}
             onTouchStart={onProgressTouchStart}
             onTouchMove={onProgressTouchMove}
             onTouchEnd={onProgressTouchEnd}
@@ -287,39 +285,10 @@ export default function DesktopControls({
               </span>
 
               <div
-                className="relative"
-                onMouseEnter={() => onShowSettings()}
-                onMouseLeave={() => onShowSettings()}
+                className="relative flex items-center"
+                onMouseEnter={onShowVolumeSlider}
+                onMouseLeave={onHideVolumeSlider}
               >
-                <AnimatePresence>
-                  {showVolumeSlider && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 pointer-events-auto"
-                    >
-                      <div className="bg-black/90 backdrop-blur-xl rounded-xl p-3 flex flex-col items-center gap-2">
-                        <span className="text-xs text-white/60 font-mono">{Math.round(volume * 100)}%</span>
-                        <div
-                          ref={volumeSliderRef}
-                          onMouseDown={onVolumeDragStart}
-                          onClick={onVolumeChange}
-                          className="relative w-28 h-1.5 bg-white/20 rounded-full cursor-pointer"
-                        >
-                          <div
-                            className="absolute top-0 left-0 h-full bg-vn-accent rounded-full pointer-events-none"
-                            style={{ width: `${volume * 100}%` }}
-                          />
-                          <div
-                            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none"
-                            style={{ left: `calc(${volume * 100}% - 6px)` }}
-                          />
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
                 <motion.button
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.9 }}
@@ -333,6 +302,41 @@ export default function DesktopControls({
                     <Volume2 className={p ? 'w-3.5 h-3.5' : 'w-4 h-4 sm:w-5 sm:h-5'} />
                   )}
                 </motion.button>
+                <AnimatePresence>
+                  {showVolumeSlider && (
+                    <motion.div
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="overflow-hidden pointer-events-auto"
+                    >
+                      <div className="flex items-center gap-2 pl-1">
+                        <div
+                          ref={volumeSliderRef}
+                          onMouseDown={onVolumeDragStart}
+                          onClick={onVolumeChange}
+                          className={`relative rounded-full cursor-pointer group/vol ${p ? 'w-20 h-1.5' : 'w-28 sm:w-36 h-1.5 sm:h-2'}`}
+                          style={{ background: 'rgba(255,255,255,0.2)' }}
+                        >
+                          <div
+                            className="absolute top-0 left-0 h-full bg-vn-accent rounded-full pointer-events-none transition-all duration-75"
+                            style={{ width: `${volume * 100}%` }}
+                          />
+                          <div
+                            className={`absolute top-1/2 -translate-y-1/2 bg-white rounded-full shadow-lg pointer-events-none
+                                       opacity-0 group-hover/vol:opacity-100 transition-opacity duration-200
+                                       shadow-[0_0_8px_rgba(255,255,255,0.3)] ${p ? 'w-3.5 h-3.5' : 'w-3.5 h-3.5 sm:w-4 sm:h-4'}`}
+                            style={{ left: `calc(${volume * 100}% - ${p ? '7px' : '7px'})` }}
+                          />
+                        </div>
+                        <span className={`font-mono text-white/60 tabular-nums ${p ? 'text-[9px] w-7' : 'text-[10px] w-8'}`}>
+                          {Math.round(volume * 100)}
+                        </span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 

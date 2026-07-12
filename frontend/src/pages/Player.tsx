@@ -23,8 +23,9 @@ export default function Player() {
   const { currentProfile } = useProfileStore()
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const progressRef = useRef<HTMLDivElement>(null)
   const ambientCanvasRef = useRef<HTMLCanvasElement>(null)
+  const progressBarElementRef = useRef<HTMLElement | null>(null)
+  const dragTimeRef = useRef(0)
   const isMobile = useIsMobile()
   const [isPortrait, setIsPortrait] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -188,7 +189,7 @@ export default function Player() {
     }
     if (trackIndex !== null) {
       for (let i = 0; i < tracks.length; i++) {
-        if (i === 0 || tracks[i].language === `track${trackIndex}`) {
+        if (tracks[i].language === `track${trackIndex}`) {
           tracks[i].mode = 'hidden'
           const handler = () => {
             const active: string[] = []
@@ -351,14 +352,14 @@ export default function Player() {
   }, [startControlsTimeout])
 
   const handleProgressClick = useCallback((e: React.MouseEvent) => {
-    const rect = progressRef.current?.getBoundingClientRect()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     if (!rect) return
     const pos = (e.clientX - rect.left) / rect.width
     seek(pos * duration)
   }, [duration, seek])
 
   const handleProgressHover = useCallback((e: React.MouseEvent) => {
-    const rect = progressRef.current?.getBoundingClientRect()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     if (!rect) return
     const pos = (e.clientX - rect.left) / rect.width
     setHoverTime(pos * duration)
@@ -367,26 +368,31 @@ export default function Player() {
 
   const handleProgressDragStart = useCallback((e: React.MouseEvent) => {
     setIsDragging(true)
-    const rect = progressRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const pos = (e.clientX - rect.left) / rect.width
-    setDragTime(pos * duration)
-  }, [duration])
-
-  const handleProgressDrag = useCallback((e: React.MouseEvent) => {
-    if (!isDragging) return
-    const rect = progressRef.current?.getBoundingClientRect()
+    progressBarElementRef.current = e.currentTarget as HTMLElement
+    const rect = progressBarElementRef.current.getBoundingClientRect()
     if (!rect) return
     const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    setDragTime(pos * duration)
-  }, [isDragging, duration])
+    const t = pos * duration
+    setDragTime(t)
+    dragTimeRef.current = t
 
-  const handleProgressDragEnd = useCallback(() => {
-    if (isDragging) {
-      seek(dragTime)
+    const onMove = (ev: MouseEvent) => {
+      if (!progressBarElementRef.current) return
+      const r = progressBarElementRef.current.getBoundingClientRect()
+      const p = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width))
+      const newT = p * duration
+      setDragTime(newT)
+      dragTimeRef.current = newT
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      seek(dragTimeRef.current)
       setIsDragging(false)
     }
-  }, [isDragging, dragTime, seek])
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [duration, seek])
 
   const progressTouchDragging = useRef(false)
 
@@ -514,7 +520,11 @@ export default function Player() {
     document.addEventListener('mouseup', onUp)
   }, [])
 
-  const tapCountRef = useRef(0)
+  const handleShowVolumeSlider = useCallback(() => setShowVolumeSlider(true), [])
+  const handleHideVolumeSlider = useCallback(() => {
+    setTimeout(() => setShowVolumeSlider(false), 300)
+  }, [])
+
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipAccumRef = useRef(0)
   const isTouchDeviceRef = useRef(false)
@@ -529,11 +539,6 @@ export default function Player() {
     const now = Date.now()
     const screenWidth = window.innerWidth
     const x = e.touches[0].clientX
-
-    if (longPressFiredRef.current) {
-      longPressFiredRef.current = false
-      return
-    }
 
     const timeSinceLastTap = now - lastSingleTapTime.current
 
@@ -567,7 +572,7 @@ export default function Player() {
           return next
         })
       }
-    }, 300)
+    }, 200)
   }, [skip, startControlsTimeout, clearControlsTimeout])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -594,6 +599,7 @@ export default function Player() {
     longPressFiredRef.current = false
     longPressTimer.current = setTimeout(() => {
       longPressFiredRef.current = true
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current)
       if (videoRef.current) videoRef.current.playbackRate = 2
       setShowGestureHint('2x Speed')
     }, 500)
@@ -647,6 +653,7 @@ export default function Player() {
       videoRef.current.playbackRate = playbackSpeed
       setShowGestureHint('')
     }
+    longPressFiredRef.current = false
 
     if (swipeSeekIndicator) {
       const amount = swipeSeekIndicator.direction === '+' ? swipeSeekIndicator.amount : -swipeSeekIndicator.amount
@@ -1113,13 +1120,13 @@ export default function Player() {
             onProgressHover={handleProgressHover}
             onProgressLeave={() => setShowHoverTime(false)}
             onProgressDragStart={handleProgressDragStart}
-            onProgressDrag={handleProgressDrag}
-            onProgressDragEnd={handleProgressDragEnd}
             onProgressTouchStart={handleProgressTouchStart}
             onProgressTouchMove={handleProgressTouchMove}
             onProgressTouchEnd={handleProgressTouchEnd}
             onVolumeChange={handleVolumeChange}
             onVolumeDragStart={handleVolumeDragStart}
+            onShowVolumeSlider={handleShowVolumeSlider}
+            onHideVolumeSlider={handleHideVolumeSlider}
             onMouseMove={handleMouseMove}
             formatTime={formatTime}
           />
