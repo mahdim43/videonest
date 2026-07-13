@@ -1,10 +1,67 @@
+<div align="center">
+
+<img src="frontend/public/favicon.svg" alt="VideoNest Logo" width="100" />
+
 # VideoNest
 
-Personal local streaming platform for your video collection.
+**Personal local streaming platform for your video collection.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20+-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com/)
+
+</div>
+
+---
+
+<div align="center">
+
+<img src="frontend/src/assets/hero.png" alt="VideoNest Screenshot" width="700" />
+
+</div>
+
+## Features
+
+| | Feature | Description |
+|---|---|---|
+| 👤 | **Multi-User Profiles** | Separate libraries and watch history per profile |
+| 📂 | **Auto Folder Indexing** | Point to a directory — videos appear automatically |
+| ▶️ | **Smooth Streaming** | HTTP Range Requests for instant seeking |
+| ⏸️ | **Continue Watching** | Pick up right where you left off |
+| ❤️ | **Favorites** | Bookmark videos for quick access |
+| 🔍 | **Search** | Find anything in your collection instantly |
+| 📱 | **Mobile Player** | Touch-friendly controls, gesture support |
+| 💬 | **Subtitles** | SRT/ASS subtitle support with customizable preferences |
+| 🎨 | **Cyberpunk Theme** | Dark UI with neon purple accents |
+| 📲 | **PWA** | Install as a standalone app, works offline |
+
+## Tech Stack
+
+<div align="center">
+
+| Layer | Technologies |
+|-------|-------------|
+| **Frontend** | React 19 &middot; TypeScript &middot; Vite &middot; TailwindCSS 4 &middot; Zustand &middot; React Query &middot; Framer Motion |
+| **Backend** | FastAPI &middot; SQLAlchemy &middot; SQLite &middot; Pydantic &middot; Watchdog |
+| **Media** | FFmpeg &middot; HTTP Range Requests &middot; Thumbnail generation |
+| **Infra** | Docker &middot; Nginx &middot; PWA (vite-plugin-pwa) |
+
+</div>
 
 ## Quick Start
 
-### Backend
+### Docker (Recommended)
+
+```bash
+docker-compose up -d
+```
+
+Frontend available at `http://localhost` &middot; Backend API at `http://localhost:8000`
+
+### Local Development
+
+**Backend**
 
 ```bash
 cd backend
@@ -12,7 +69,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend
+**Frontend**
 
 ```bash
 cd frontend
@@ -20,76 +77,65 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173
+Open [http://localhost:5173](http://localhost:5173)
 
-## Features
+### Windows Installer
 
-- Profile-based multi-user support
-- Automatic folder indexing
-- Video streaming with HTTP Range Requests
-- Playback history and continue watching
-- Favorites
-- Search
-- Mobile-friendly player
-- Subtitle support
-- Dark theme with cyberpunk-inspired design
-
-## Tech Stack
-
-- **Backend**: FastAPI, SQLAlchemy, SQLite, FFmpeg
-- **Frontend**: React, TypeScript, Vite, TailwindCSS, Vidstack Player
-
-## Docker
+> **Prerequisites:** Python 3.11+, Node.js 20+, FFmpeg in PATH, [NSIS](https://nsis.sourceforge.io/Download)
 
 ```bash
-docker-compose up -d
+build.bat            # Build frontend & bundle backend
+create-installer.bat # Generate VideoNest-Setup.exe
 ```
 
-## Creating Installer
+Run `VideoNest-Setup.exe` and install to your preferred directory. Launch from the Start Menu or desktop shortcut.
 
-### Prerequisites
+### Quick Launch (Dev)
 
-- Python 3.11+
-- Node.js 20+
-- FFmpeg installed and in PATH
-- [NSIS](https://nsis.sourceforge.io/Download) (for Windows installer)
-
-### Build Steps
-
-1. Run the build script:
-```bash
-build.bat
-```
-
-2. Create the installer:
-```bash
-create-installer.bat
-```
-
-3. Find `VideoNest-Setup.exe` in the project root.
-
-### Using the Installer
-
-1. Run `VideoNest-Setup.exe`
-2. Choose installation directory
-3. Launch from Start Menu or desktop shortcut
-
-## Quick Launch (Development)
-
-For development without installer:
 ```bash
 start.bat
 ```
 
-## API Endpoints
+## Project Structure
 
-- `GET /api/profiles/` - List profiles
-- `POST /api/profiles/` - Create profile
-- `GET /api/folders/` - List folders
-- `POST /api/folders/` - Add folder
-- `GET /api/videos/` - List videos
-- `GET /api/videos/{id}/stream` - Stream video
-- `GET /api/history/{profileId}` - Get playback history
-- `POST /api/history/{profileId}` - Update playback history
-- `GET /api/favorites/{profileId}` - Get favorites
-- `POST /api/favorites/{profileId}` - Add to favorites
+```
+videonest/
+├── backend/
+│   └── app/
+│       ├── api/          # Route handlers (profiles, videos, folders, history, favorites)
+│       ├── core/         # Config & database setup
+│       ├── models/       # SQLAlchemy models
+│       └── services/     # Business logic (scanning, thumbnails, streaming)
+├── frontend/
+│   └── src/
+│       ├── components/   # UI components (player controls, nav, prompts)
+│       ├── pages/        # Landing, Home, Player, Settings
+│       └── assets/       # Images & icons
+├── docker-compose.yml
+├── start.bat
+└── launch.py
+```
+
+## API Reference
+
+<details>
+<summary><strong>View all endpoints</strong></summary>
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/profiles/` | List all profiles |
+| `POST` | `/api/profiles/` | Create a new profile |
+| `GET` | `/api/folders/` | List indexed folders |
+| `POST` | `/api/folders/` | Add a folder to index |
+| `GET` | `/api/videos/` | List all videos |
+| `GET` | `/api/videos/{id}/stream` | Stream video with Range support |
+| `GET` | `/api/history/{profileId}` | Get playback history |
+| `POST` | `/api/history/{profileId}` | Update playback position |
+| `GET` | `/api/favorites/{profileId}` | Get favorites |
+| `POST` | `/api/favorites/{profileId}` | Add to favorites |
+
+</details>
+
+## License
+
+[MIT](LICENSE) &copy; 2026 VideoNest
